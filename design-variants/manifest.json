@@ -1,0 +1,15 @@
+{
+  "canvas": {
+    "width": 390,
+    "height": 760,
+    "unit": "px"
+  },
+  "recommendation": "C 现代轻拟物版",
+  "images": [
+    "A_更豪华版_VIP.png",
+    "B_潮汕国潮版.png",
+    "C_现代轻拟物版_推荐.png"
+  ],
+  "specification": "推荐版_C_座位坐标与配色说明.md",
+  "note": "Images are cropped and upscaled from the generated three-concept board; coordinate/color values are implementation guidance, not exact Figma exports."
+}
