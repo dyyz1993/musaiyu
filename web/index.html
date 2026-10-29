@@ -586,6 +586,7 @@ function renderMe(){
   $("#mychips").textContent=fmt(me.chips);
   const mb=$("#mebanker"); if(mb) mb.innerHTML=me.banker?'<div class="bankerbadge"></div>':"";
   const mr=$("#meraise"); if(mr) mr.style.display = S.raised.has(me.id)?"block":"none";
+  const mv=$("#meavatar"); if(mv && S.phase!=="myturn") mv.style.display="flex";
 }
 function renderTop(){
   $("#roominfo").textContent=`房号 882010 · 第 ${S.round} 局 · 底注 ${S.ante} · 池底 ${fmt(S.pot)}`;
@@ -992,7 +993,7 @@ $("#btn-draw").addEventListener("click",()=>{
   const me=S.players[S.myIdx]; if(!me) return;
   if(S.raised.has(me.id)){ S.raised.delete(me.id); setBanner("已撤销举手"); }
   else { S.raised.add(me.id); setBanner("已举手要补牌，全桌可见"); }
-  updateRaiseBtn(); renderSeats();
+  updateRaiseBtn(); renderSeats(); renderMe();
 }, true);
 // "补一张"按钮双语义: 轮到我 = 真的补牌; 还没轮到我 = 提前举手/撤销示意
 function updateRaiseBtn(){
