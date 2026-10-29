@@ -11,7 +11,7 @@
   --green-hi:#9fe6bf; --btn-draw:#F4C447;
 }
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-html,body{height:100%;background:#050807;color:#fff;overflow:hidden;
+html,body{height:100%;background:radial-gradient(ellipse at 50% 40%,#0a4a32,#04150f 70%,#020a06);color:#fff;overflow:hidden;
   font-family:-apple-system,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif}
 #app{position:relative;margin:0 auto;height:100dvh;max-width:430px;width:100%;
   display:flex;flex-direction:column;background:#0a0a0c;overflow:hidden}
@@ -28,7 +28,7 @@ html,body{height:100%;background:#050807;color:#fff;overflow:hidden;
 .icobtn{width:28px;height:28px;border:none;background:transparent;color:var(--gold);font-size:15px;cursor:pointer}
 
 #table{flex:1;position:relative;min-height:0;overflow:hidden;
-  background:url(assets/table-v.jpg) center/cover no-repeat, #04150f}
+  background:url(assets/table-v.jpg) center 38%/135% auto no-repeat, #04150f}
 #table:before{content:"";position:absolute;inset:0;background:rgba(4,16,10,.22)}
 #arena{position:absolute;inset:0}
 
@@ -429,8 +429,8 @@ function renderSeats(){
   });
 }
 function cardFaceSrc(c){
-  if(c.joker) return "assets/cards/"+(c.red?"J-1":"J-2")+".svg";
-  return "assets/cards/"+c.suit+"-"+rankStr(c.rank)+".svg";
+  if(c.joker) return "assets/cards/"+(c.red?"J-1":"J-2")+".png";
+  return "assets/cards/"+c.suit+"-"+rankStr(c.rank)+".png";
 }
 function renderHand(popLast){
   const me=S.players[S.myIdx];
@@ -495,7 +495,7 @@ function makePlayers(n,ante){
 }
 async function startRound(){
   S.round++; S.phase="betting"; S.pot=0;
-  if(!S.players.length) S.players=makePlayers(4,S.ante);
+  if(!S.players.length) S.players=makePlayers(9,S.ante);
   else { S.bankerSeq++; S.players.forEach(p=>{p.banker=false;p.cards=[];p.folded=false;p.inTurn=false;});
          S.players[S.bankerSeq%S.players.length].banker=true; }
   renderAll(); setBanner("选择底注开局");
@@ -504,7 +504,7 @@ async function startRound(){
     <div class="betrow">
       ${[200,500,1000].map(v=>`<button class="betopt${v===S.ante?" sel":""}" data-v="${v}">底注 ${v}</button>`).join("")}
     </div>
-    <div class="note">duobi-v1 · 全员互比 · 平局不输不赢 · 人数 ${S.players.length}</div>
+    <div class="note">duobi-v1 · 全员互比 · 平局不输不赢 · 满员 ${S.players.length} 人</div>
     <button class="ok" id="btn-go">发 牌</button>`;
   $("#panelbox").querySelectorAll(".betopt").forEach(b=>b.onclick=()=>{
     S.ante=+b.dataset.v;
@@ -614,7 +614,7 @@ function settle(){
 
 /* ---------- 自测模式 ---------- */
 async function autoTest(){
-  const log=[]; S.players=makePlayers(4,200);
+  const log=[]; S.players=makePlayers(9,200);
   for(let g=0;g<3;g++){
     await startRound();
     $("#btn-go").click(); await sleep(200);
@@ -639,7 +639,7 @@ window.__selfTest=selfTest;
 /* ---------- 启动 ---------- */
 window.addEventListener("error",e=>{ window.__err=String(e.message||e); });
 $("#specbtn").onclick=()=>$("#speclist").classList.toggle("show");
-S.players=makePlayers(4,200); renderAll(); setBanner("点击「发牌」开始"); startRound();
+S.players=makePlayers(9,200); renderAll(); setBanner("点击「发牌」开始"); startRound();
 if(new URLSearchParams(location.search).get("test")==="1") autoTest();
 </script>
 </body>
