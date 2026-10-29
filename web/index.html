@@ -94,6 +94,12 @@ html,body{height:100%;background:radial-gradient(ellipse at 50% 40%,#0d5c3e,#073
 /* 倒计时进度环(围着按钮/头像走一圈) */
 .ring{position:absolute;border-radius:50%;pointer-events:none}
 .ringwrap{position:relative;width:52px;height:52px;flex:none}
+.sebring{position:absolute;inset:-9px;pointer-events:none}
+.sebring svg{position:absolute;inset:0;width:100%;height:100%;transform:rotate(-90deg)}
+.sebring .bgc{stroke:rgba(255,255,255,.14)}
+.sebring .fgc{stroke:var(--gold);stroke-linecap:round;transition:stroke-dashoffset .25s linear}
+.sebring .ringtxt{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  font-size:12px;font-weight:800;color:#fff;text-shadow:0 1px 4px #000}
 .ringwrap svg{position:absolute;inset:0;transform:rotate(-90deg)}
 .ringwrap .bgc{stroke:rgba(255,255,255,.12)}
 .ringwrap .fgc{stroke:var(--gold);stroke-linecap:round;transition:stroke-dashoffset .25s linear}
@@ -245,7 +251,7 @@ table.mx .diag{background:rgba(255,255,255,.02)}
         <div class="ringtxt" id="myringtxt">15</div>
         <span id="mebanker" style="position:absolute;right:-6px;bottom:2px"></span>
       </div>
-      <div id="meavatar" style="display:none"><span id="mebanker2"></span></div>
+      <div id="meavatar"><span id="mebanker2"></span></div>
       <div id="meinfo">
         <b>阿洲（我 · 庄底位）</b>
         <div id="mechips"><span class="chip-ic"></span><span id="mychips">12,400</span></div>
@@ -493,6 +499,7 @@ function cardFaceSrc(c){
 }
 function renderSeats(){
   const arena=$("#arena"); arena.innerHTML="";
+  const keepRing = (typeof S!=="undefined" && S.ringOwner) ? S.ringOwner : null;
   const opps=S.players.filter(p=>!p.me);
   const angles=SEAT_ANGLES[opps.length];
   if(!angles){ arena.innerHTML='<div style="position:absolute;left:50%;top:45%;transform:translate(-50%,-50%);font-size:11px;color:#9fb8ac">人数超出布局表</div>'; return; }
@@ -512,8 +519,15 @@ function renderSeats(){
       ? `<span class="face-up">${p.cards.map(c=>`<span class="fc"><img src="${cardFaceSrc(c)}"></span>`).join("")}</span>`
       : (p.cards?p.cards.map(()=>'<div class="mcard"></div>').join(""):"");
     el.innerHTML=`
-      <div class="avwrap"><div class="avatar" style="background-image:url('${p.face}')"></div>
-        ${p.banker?'<div class="bankerbadge"></div>':""}</div>
+      <div class="avwrap">
+        <div class="avatar" style="background-image:url('${p.face}')"></div>
+        ${p.banker?'<div class="bankerbadge"></div>':""}
+        <div class="sebring" data-ring="${p.id}" style="display:none">
+          <svg viewBox="0 0 52 52"><circle class="bgc" cx="26" cy="26" r="24" fill="none" stroke-width="3"/>
+          <circle class="fgc" cx="26" cy="26" r="24" fill="none" stroke-width="3" stroke-dasharray="150.8" stroke-dashoffset="0"/></svg>
+          <div class="ringtxt">5</div>
+        </div>
+      </div>
       <div class="seatinfo">
         <span class="sname">${p.name}</span>
         <span class="schips"><span class="chip-ic"></span>${fmt(p.chips)}</span>
@@ -521,6 +535,18 @@ function renderSeats(){
       </div>`;
     arena.appendChild(el);
   });
+  // 重绘后恢复正在走的倒计时环(否则被 DOM 重建冲掉)
+  if(keepRing && keepRing!=="me"){
+    const w=document.querySelector(`.sebring[data-ring="${keepRing}"]`);
+    if(w && S.ringDeadline){ 
+      w.style.display="block";
+      const fgc=w.querySelector(".fgc"), txt=w.querySelector(".ringtxt");
+      const left=Math.max(0,(S.ringDeadline-Date.now())/1000);
+      const RING_C=2*Math.PI*24;
+      fgc.setAttribute("stroke-dashoffset", RING_C*(1-left/S.ringTotal));
+      if(txt) txt.textContent=Math.ceil(left);
+    }
+  }
 }
 function renderHand(popLast){
   const me=S.players[S.myIdx];
@@ -556,26 +582,44 @@ function renderTop(){
 function renderAll(){ renderSeats(); renderHand(); renderMe(); renderTop(); }
 function setBanner(html){ $("#banner").innerHTML=`<b>${html}</b>`; }
 const RING_C=2*Math.PI*24;
-function startRing(sec,onEnd){
-  const wrap=$("#myring"), fgc=$("#myfgc"), txt=$("#myringtxt");
-  if(!wrap) return;
-  wrap.style.display="block"; $("#meavatar").style.display="none";
+function startRing(sec,onEnd,pid){
+  const RING_C=2*Math.PI*24;
+  // 挂在当前决策者头像上: pid 为 'me' 时挂我头像, 否则挂对应座位
+  let wrap, fgc, txt;
+  if(pid==="me"||pid===null||pid===undefined){
+    wrap=$("#myring"); fgc=$("#myfgc"); txt=$("#myringtxt");
+    wrap.style.display="block"; const ma=$("#meavatar"); if(ma) ma.style.display="none";
+  }else{
+    wrap=document.querySelector(`.sebring[data-ring="${pid}"]`);
+    if(!wrap){ // 该座位还没渲染(例如刚被重绘), 先重绘再取
+      renderSeats();
+      wrap=document.querySelector(`.sebring[data-ring="${pid}"]`);
+    }
+    if(!wrap) return;
+    fgc=wrap.querySelector(".fgc"); txt=wrap.querySelector(".ringtxt");
+    wrap.style.display="block";
+  }
+  if(!wrap||!fgc) return;
   const t0=Date.now();
+  S.ringOwner = (pid==="me"||pid===null||pid===undefined) ? "me" : pid;
+  S.ringDeadline = t0 + sec*1000;
+  S.ringTotal = sec;
   fgc.setAttribute("stroke-dasharray", RING_C);
   const tick=()=>{
     const left=Math.max(0, sec-(Date.now()-t0)/1000);
     fgc.setAttribute("stroke-dashoffset", RING_C*(1-left/sec));
-    txt.textContent=Math.ceil(left);
-    if(left<=0){ wrap.style.display="none"; $("#meavatar").style.display="flex"; onEnd&&onEnd(); return; }
+    if(txt) txt.textContent=Math.ceil(left);
+    if(left<=0){ if(wrap) wrap.style.display="none"; if(pid==="me"){const ma=$("#meavatar"); if(ma) ma.style.display="flex";} onEnd&&onEnd(); return; }
     ringTimer=setTimeout(tick,100);
   };
   clearTimeout(ringTimer); tick();
 }
 function stopRing(){
   clearTimeout(ringTimer);
-  const wrap=$("#myring");
-  if(wrap) wrap.style.display="none";
+  if(typeof S!=="undefined"){ S.ringOwner=null; S.ringDeadline=0; }
+  const mw=$("#myring"); if(mw) mw.style.display="none";
   const ma=$("#meavatar"); if(ma) ma.style.display="flex";
+  document.querySelectorAll(".sebring").forEach(e=>e.style.display="none");
 }
 let ringTimer=null;
 const MY_TURN_SEC=15, AI_TURN_SEC=5;
@@ -699,13 +743,13 @@ async function decisionLoop(deck){
         if(resolveTurn){ resolveTurn(act); resolveTurn=null; } };
       $("#btn-stop").onclick=()=>finish("pass");
       $("#btn-draw").onclick=()=>doDraw();
-      startRing(MY_TURN_SEC, ()=>{ setBanner("超时 · 自动过"); finish("pass"); });
+      startRing(MY_TURN_SEC, ()=>{ setBanner("超时 · 自动过"); finish("pass"); }, "me");
       await turnPromise;
       renderSeats();
     } else {
       p.inTurn=true; renderSeats();
       setBanner(`等待 ${p.name} 决策…`);
-      startRing(AI_TURN_SEC, ()=>{});
+      startRing(AI_TURN_SEC, ()=>{}, p.id);
       await sleep(AI_TURN_SEC*1000*0.72);
       stopRing();
       const r=classifyHand(p.cards);
