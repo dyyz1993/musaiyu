@@ -262,7 +262,7 @@ table.mx .diag{background:rgba(255,255,255,.02)}
         <div class="ringtxt" id="myringtxt">15</div>
         <span id="mebanker" style="position:absolute;right:-6px;bottom:2px"></span>
       </div>
-      <div id="meavatar"><span id="mebanker2"></span></div>
+      <div id="meavatar" style="position:relative"><span id="mebanker2"></span><span id="meraise" class="raisehand" style="display:none">✋</span></div>
       <div id="meinfo">
         <b>阿洲（我 · 庄底位）</b>
         <div id="mechips"><span class="chip-ic"></span><span id="mychips">12,400</span></div>
@@ -585,6 +585,7 @@ function renderMe(){
   const me=S.players[S.myIdx];
   $("#mychips").textContent=fmt(me.chips);
   const mb=$("#mebanker"); if(mb) mb.innerHTML=me.banker?'<div class="bankerbadge"></div>':"";
+  const mr=$("#meraise"); if(mr) mr.style.display = S.raised.has(me.id)?"block":"none";
 }
 function renderTop(){
   $("#roominfo").textContent=`房号 882010 · 第 ${S.round} 局 · 底注 ${S.ante} · 池底 ${fmt(S.pot)}`;
