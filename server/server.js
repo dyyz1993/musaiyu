@@ -397,8 +397,8 @@ function restoreRooms() {
       }
       room.phase = 'waiting';
       rooms.set(room.id, room);
-      // bot 自嗨房恢复后直接续跑对局循环
-      if (room.id.startsWith('bot_') && room.players.length >= 2) runBotRound(room);
+      // bot 自嗨房恢复后直接续跑对局循环（createBotRoom 语义 phase=playing）
+      if (room.id.startsWith('bot_') && room.players.length >= 2) { room.phase = 'playing'; runBotRound(room); }
     }
     console.log(`[store] 已恢复 ${saved.length} 个房间`);
     return saved.length;
