@@ -690,8 +690,8 @@ function settle(){
 
   // 对阵矩阵: 行=我, 列=对手, 格子=该对的输赢
   const ps=S.players, n=ps.length;
-  const cell={}, wtype={};             // cell[i][j] = i 从 j 那对得到的金额(带符号)
-  ps.forEach((_,i)=>{ cell[i]={}; wtype[i]={}; });
+  const cell=[], wtype=[];             // cell[i][j] = i 从 j 那对得到的金额(带符号)
+  for(let i=0;i<n;i++){ cell[i]=[]; wtype[i]=[]; }
   for(const pr of pairs){
     const i=ps.indexOf(pr.p1), j=ps.indexOf(pr.p2);
     if(!pr.w){ cell[i][j]=0; cell[j][i]=0; wtype[i][j]="tie"; continue; }
