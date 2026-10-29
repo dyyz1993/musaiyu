@@ -272,7 +272,7 @@ table.mx .diag{background:rgba(255,255,255,.02)}
     <div id="hand"><div id="drawslot"><span style="font-size:20px">+</span>补牌位</div></div>
     <div id="actions">
       <button class="abtn" id="btn-stop" aria-label="过" disabled></button>
-      <button class="abtn" id="btn-draw" aria-label="补一张" disabled><span class="abtn-tx" id="btn-draw-tx"></span></button>
+      <button class="abtn" id="btn-draw" aria-label="补一张"><span class="abtn-tx" id="btn-draw-tx"></span></button>
     </div>
   </div>
   <div id="home2"><i></i></div>
@@ -734,7 +734,7 @@ function dealOrder(){
 }
 async function deal(){
   S.phase="dealing";
-  $("#btn-stop").disabled=true; $("#btn-draw").disabled=true;
+  $("#btn-stop").disabled=true; $("#btn-draw").disabled=false;
   const deck=shuffle(buildDeck());
   S.players.forEach(p=>{p.cards=[];p.folded=false;});
   S.pot=S.players.reduce((s,p)=>s+p.stake,0);
@@ -778,8 +778,7 @@ async function decisionLoop(deck){
       p.inTurn=true; S.phase="myturn"; renderSeats();
       const canDraw=p.cards.length<PRESET.maxCards;
       setBanner(canDraw?"轮到你 · 过 或 补一张":"轮到你 · 过");
-      $("#btn-stop").disabled=false; $("#btn-draw").disabled=!canDraw;
-      $("#btn-draw").style.display=canDraw?"flex":"none";
+      $("#btn-stop").disabled=false;
       renderHand();
       let done=false;
       let resolveTurn=null;
@@ -790,15 +789,14 @@ async function decisionLoop(deck){
         p.cards.push(deck.pop());
         renderHand(true);
         S.onDrawRequest=null; S.phase="decision";
-        p.inTurn=false; $("#btn-stop").disabled=true; $("#btn-draw").disabled=true;
+        p.inTurn=false; $("#btn-stop").disabled=true;
         renderSeats(); setBanner("你补了一张");
         if(resolveTurn){ resolveTurn("draw"); resolveTurn=null; }
       };
       S.onDrawRequest=doDraw;
       const finish=(act)=>{ if(done) return; done=true; clearTimeout(ringTimer); stopRing();
         S.onDrawRequest=null; S.phase="decision";
-        p.inTurn=false; $("#btn-stop").disabled=true; $("#btn-draw").disabled=true;
-        $("#btn-draw").style.display="flex";
+        p.inTurn=false; $("#btn-stop").disabled=true;
         if(resolveTurn){ resolveTurn(act); resolveTurn=null; } };
       $("#btn-stop").onclick=()=>finish("pass");
       $("#btn-draw").onclick=()=>doDraw();
@@ -1005,19 +1003,20 @@ function updateRaiseBtn(){
   const tx=$("#btn-draw-tx");
   if(myTurn){
     // 轮到我: 只有"补一张"语义(素材图自带文字, 不覆盖)
-    btn.style.display="flex";
+    btn.style.display="flex"; btn.disabled=false;
     btn.classList.remove("on"); btn.classList.remove("raise");
     btn.setAttribute("aria-label","补一张");
+    btn.title="";
     if(tx) tx.textContent="";
   }else if(waiting){
     // 还没轮到我: 提前举手示意(可撤销) —— 覆盖成文字按钮
-    btn.style.display="flex";
+    btn.style.display="flex"; btn.disabled=false;
     btn.classList.toggle("on", !!raised); btn.classList.add("raise");
     btn.setAttribute("aria-label", raised?"撤销举手":"举手示意要补牌");
     btn.title = raised ? "已举手：全桌可见，可点击撤销" : "提前举手：告诉大家你要补牌（轮到你时才能真正补）";
     if(tx) tx.textContent = raised ? "✋ 已举手 · 点击撤销" : "✋ 提前举手";
   }else{
-    btn.style.display="none";
+    btn.style.display="none"; btn.disabled=true;
   }
 }
 S.players=makePlayers(9,200); renderAll(); setBanner("点击「发牌」开始"); startRound();
