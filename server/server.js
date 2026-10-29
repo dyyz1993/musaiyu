@@ -13,6 +13,13 @@ const BOT_ROOM_COUNT = 3;
 const app = express();
 const httpServer = http.createServer(app);
 const io = new Server(httpServer, { cors: { origin: '*' } });
+// shanbox 反代按子域名整站转发，页面挂在 /musaiyu/ 子路径下；剥掉前缀让静态和 API 复用同一套路由
+app.use((req, res, next) => {
+  if (req.url === '/musaiyu') req.url = '/';
+  else if (req.url.startsWith('/musaiyu/')) req.url = req.url.slice('/musaiyu'.length);
+  res.set('Access-Control-Allow-Origin', '*');
+  next();
+});
 app.use(express.static(path.join(__dirname, 'public')));
 
 /* ==================== 监控 API ==================== */

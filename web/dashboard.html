@@ -64,14 +64,18 @@ a{color:var(--gold);text-decoration:none}
 
 <script>
 const API = window.location.hostname.includes("pages.dev")
-  ? "https://yxx.shanbox.19930810.xyz:8443/musaiyu/api"
+  ? "https://musaiyu.shanbox.19930810.xyz:8443/musaiyu/api"
   : "/musaiyu/api";
+/* socket.io 路径不带 /musaiyu 前缀，健康探测必须用源根 */
+const ORIGIN = window.location.hostname.includes("pages.dev")
+  ? "https://musaiyu.shanbox.19930810.xyz:8443"
+  : "";
 
 async function refresh(){
   try{
     const [statsRes, roomsRes] = await Promise.all([
       fetch(API + "/api/stats"),
-      fetch(API + "/socket.io/?EIO=4&transport=polling").catch(()=>null)
+      fetch(ORIGIN + "/socket.io/?EIO=4&transport=polling").catch(()=>null)
     ]);
     const d = await statsRes.json();
     document.getElementById("st-rooms").textContent = d.totalRooms;

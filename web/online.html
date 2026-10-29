@@ -360,14 +360,16 @@ function stopRing(){
 }
 
 /* ---- Socket.io ---- */
+/* 同源(shanbox 子域名)连根路径即可；pages.dev 模式跨域指 musaiyu 子域名根 */
 const SERVER_URL = location.hostname.includes("pages.dev")
-  ? "https://yxx.shanbox.19930810.xyz:8443/musaiyu/api"
-  : "/musaiyu/api";
+  ? "https://musaiyu.shanbox.19930810.xyz:8443"
+  : "";
 let sock=null;
 const st={count:0,raised:new Set()};
 
 function connect(){
-  sock=io(SERVER_URL,{transports:["websocket","polling"],reconnection:true,reconnectionDelay:1000,reconnectionDelayMax:8000});
+  const opts={transports:["websocket","polling"],reconnection:true,reconnectionDelay:1000,reconnectionDelayMax:8000};
+  sock=SERVER_URL?io(SERVER_URL,opts):io(opts);
   sock.on("connect",()=>{
     $("#conn").textContent="已连接"; $("#conn").className="ok";
     $("#reconnect").classList.remove("show");
