@@ -690,16 +690,19 @@ function settle(){
 
   // 对阵矩阵: 行=我, 列=对手, 格子=该对的输赢
   const ps=S.players, n=ps.length;
-  const cell=[], wtype=[];             // cell[i][j] = i 从 j 那对得到的金额(带符号)
-  for(let i=0;i<n;i++){ cell[i]=[]; wtype[i]=[]; }
+  // 用 Map 存 "i,j" -> 金额, 彻底避开数组下标语义坑
+  const cell=new Map(), wtype=new Map();
+  const key=(a,b)=>a+"_"+b;
   for(const pr of pairs){
     const i=ps.indexOf(pr.p1), j=ps.indexOf(pr.p2);
-    if(!pr.w){ cell[i][j]=0; cell[j][i]=0; wtype[i][j]="tie"; continue; }
+    if(!pr.w){ cell.set(key(i,j),0); cell.set(key(j,i),0); wtype.set(key(i,j),"tie"); continue; }
     const wi=ps.findIndex(p=>p.id===pr.w);
     const amt=pr.paid||0;
-    cell[wi][pr.p1.id===pr.w?j:i]=amt;
-    cell[pr.p1.id===pr.w?i:j]=-amt;
-    wtype[wi][pr.p1.id===pr.w?j:i]=pr.winType;
+    const loser = (pr.p1.id===pr.w)? j : i;
+    const winner= (pr.p1.id===pr.w)? i : j;
+    cell.set(key(winner,loser), amt);
+    cell.set(key(loser,winner), -amt);
+    wtype.set(key(winner,loser), pr.winType);
   }
   const mini=c=>`<span class="hc"><img src="${cardFaceSrc(c)}"></span>`;
   const head=ps.map(p=>`<th class="${p.me?"meh":""}"><div class="hname">${p.name}</div>
@@ -707,9 +710,9 @@ function settle(){
   const body=ps.map((p,i)=>{
     const cells=ps.map((q,j)=>{
       if(i===j) return `<td class="diag"></td>`;
-      const v=cell[i][j]||0;
+      const v=cell.get(key(i,j))||0;
       if(v===0) return `<td class="tie">平</td>`;
-      const wt=wtype[i][j]||"";
+      const wt=wtype.get(key(i,j))||"";
       return `<td class="${v>0?"win":"lose"}" title="${wt}">${v>0?"+":""}${fmt(v)}</td>`;
     }).join("");
     const cards=(p.cards||[]).map(mini).join("");
