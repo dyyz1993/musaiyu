@@ -32,24 +32,20 @@ html,body{height:100%;background:#050807;color:#fff;overflow:hidden;
 
 /* 牌桌 */
 #table{flex:1;position:relative;min-height:0;
-  background:
-    radial-gradient(ellipse 78% 52% at 50% 46%, #0f5a3d 0%, var(--felt) 55%, #072a1d 82%, var(--felt-dark) 100%);
+  background:url(assets/table-bg.jpg) center/cover no-repeat, var(--felt-dark);
   overflow:hidden}
-#table:before{content:"";position:absolute;inset:10px 12px;
-  border:6px solid #50391c;border-radius:46%/38%;
-  box-shadow:inset 0 0 0 2px var(--gold), inset 0 0 0 5px #103d2a, 0 6px 18px #0008}
+#table:before{content:"";position:absolute;inset:0;background:rgba(4,16,10,.30)}
 #arena{position:absolute;inset:0}
 .seat{position:absolute;display:flex;align-items:center;gap:6px;transform:translate(-50%,-50%)}
 .seat.v{flex-direction:column;gap:0;text-align:center;transform:translateX(-50%)}
 .seat .avwrap{position:relative;flex:none}
-.avatar{width:32px;height:32px;border-radius:50%;border:2px solid var(--gold);
+.avatar{width:32px;height:32px;border-radius:50%;border:none;
   display:flex;align-items:center;justify-content:center;font-weight:800;color:var(--gold);
-  background:linear-gradient(160deg,#2e4a3d,#15251d);font-size:13px}
+  background:linear-gradient(160deg,#2e4a3d,#15251d);background-size:cover;font-size:13px}
 .seat.l .avatar,.seat.r .avatar{width:34px;height:34px;font-size:14px}
 .seat.v.xl .avatar{width:38px;height:38px;font-size:15px}
-.bankerbadge{position:absolute;left:-7px;bottom:-3px;width:20px;height:20px;border-radius:50%;
-  background:radial-gradient(circle at 35% 30%,#e5544b,#a01d16);border:1.5px solid var(--gold);
-  display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:#ffe6a0}
+.bankerbadge{position:absolute;left:-7px;bottom:-3px;width:22px;height:22px;
+  background:url(assets/banker-badge.png) center/cover}
 .seatinfo{display:flex;flex-direction:column;gap:1px;min-width:0}
 .seat.v .seatinfo{align-items:center}
 .sname{font-size:10px;font-weight:600;color:rgba(255,255,255,.94);white-space:nowrap}
@@ -59,12 +55,7 @@ html,body{height:100%;background:#050807;color:#fff;overflow:hidden;
 .cardsrow{display:flex;margin-top:2px}
 .seat.l .cardsrow,.seat.r .cardsrow{margin-top:0}
 .mcard{width:22px;height:31px;border-radius:3px;margin:0 -2px;
-  background:linear-gradient(160deg,#c2382f,#8f1f1a);border:1px solid #e8b96a;
-  box-shadow:0 1px 3px rgba(0,0,0,.55)}
-.mcard:after{content:"";display:block;height:100%;border-radius:2px;
-  background:
-    radial-gradient(circle at 50% 50%, #e8c87a 0 8%, transparent 9%),
-    repeating-linear-gradient(45deg, transparent 0 3px, #d9a44a33 3px 5px)}
+  background:url(assets/card-back.png) center/cover;box-shadow:0 1px 3px rgba(0,0,0,.55)}
 .seat.act .avatar{border-color:#e5544b;box-shadow:0 0 0 2px rgba(229,84,75,.5)}
 .folded{opacity:.35}
 
@@ -89,8 +80,7 @@ html,body{height:100%;background:#050807;color:#fff;overflow:hidden;
   background:linear-gradient(180deg,rgba(3,10,7,0),rgba(3,10,7,.88) 30%)}
 #meline{display:flex;align-items:center;gap:10px;margin-bottom:6px}
 #meavatar{width:40px;height:40px;border-radius:50%;flex:none;position:relative;
-  border:2px solid var(--gold);display:flex;align-items:center;justify-content:center;
-  font-weight:800;font-size:16px;color:#ffd97a;background:linear-gradient(160deg,#543c17,#2a1d08)}
+  border:2px solid var(--gold);background-size:cover}
 #meinfo b{font-size:13px;font-weight:600;white-space:nowrap}
 #mechips{font-size:12px;color:#ffd97a;display:flex;align-items:center;gap:4px}
 #handinfo{margin-left:auto;text-align:right;white-space:nowrap}
@@ -98,22 +88,18 @@ html,body{height:100%;background:#050807;color:#fff;overflow:hidden;
 #handinfo .t1 b{color:#fff;font-size:15px}
 #handinfo .t2{font-size:11px;color:#ffd97a}
 #hand{display:flex;justify-content:center;align-items:center;gap:10px;margin-bottom:8px;min-height:112px}
-.pcard{width:78px;height:110px;border-radius:8px;background:#fff;color:#111;position:relative;
-  box-shadow:0 4px 10px rgba(0,0,0,.55);flex:none;
-  display:flex;flex-direction:column;justify-content:space-between;padding:5px 7px;
-  font-weight:800;line-height:1}
-.pcard .rk{font-size:17px}
-.pcard .st{font-size:22px;text-align:center}
-.pcard.red{color:#c0392b}
-.pcard.joker{background:linear-gradient(160deg,#fdf6e3,#eadfc0);color:#8f1f1a}
+.pcard{width:78px;height:110px;border-radius:8px;background:#fff;position:relative;
+  box-shadow:0 4px 10px rgba(0,0,0,.55);flex:none;overflow:hidden}
+.pcard img{width:100%;height:100%;display:block}
 #drawslot{width:78px;height:110px;border-radius:8px;border:1.5px dashed rgba(255,255,255,.45);
   display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
   color:rgba(255,255,255,.6);font-size:11px;flex:none}
 #actions{display:flex;gap:10px}
-.abtn{flex:1;height:44px;border-radius:14px;border:none;font-size:16px;font-weight:800;
-  font-family:inherit;display:flex;align-items:center;justify-content:center;gap:6px;cursor:pointer}
-#btn-stop{background:var(--btn-stop);color:#eafff5;border:1px solid #0d8a67}
-#btn-draw{background:linear-gradient(180deg,#f7d67a,var(--btn-draw));color:#3d2c05;box-shadow:0 4px 12px rgba(201,161,62,.35)}
+.abtn{flex:1;height:48px;border-radius:16px;border:none;
+  font-family:inherit;display:flex;align-items:center;justify-content:center;cursor:pointer;
+  background-size:cover;background-position:center}
+#btn-stop{background-image:url(assets/btn-stop.png)}
+#btn-draw{background-image:url(assets/btn-draw.png)}
 .abtn:disabled{opacity:.45;cursor:default}
 .abtn:not(:disabled):active{transform:translateY(1px)}
 
@@ -130,7 +116,7 @@ html,body{height:100%;background:#050807;color:#fff;overflow:hidden;
 .srow .lose{color:#ff8f86;font-weight:700}
 .srow .tie{color:#ccc}
 .stotal{display:flex;justify-content:space-between;font-size:14px;font-weight:800;margin-top:10px}
-.panel .ok{margin-top:14px;width:100%;height:40px;border-radius:12px;border:none;
+.panel .ok{margin-top:14px;width:100%;height:44px;border-radius:14px;border:none;
   background:linear-gradient(180deg,#f7d67a,var(--btn-draw));color:#3d2c05;font-weight:800;font-size:15px;cursor:pointer}
 .betrow{display:flex;gap:10px;margin:12px 0}
 .betopt{flex:1;height:52px;border-radius:12px;border:1.5px solid var(--line);background:#0d1f16;
@@ -172,7 +158,7 @@ html,body{height:100%;background:#050807;color:#fff;overflow:hidden;
   </div>
   <div id="mezone">
     <div id="meline">
-      <div id="meavatar">洲<span id="mebanker"></span></div>
+      <div id="meavatar" style="background-image:url('assets/avatars/avatar-m3.png')"><span id="mebanker"></span></div>
       <div id="meinfo">
         <b>阿洲（我 · 庄底位）</b>
         <div id="mechips"><span class="chip-ic"></span><span id="mychips">12,400</span></div>
@@ -183,8 +169,8 @@ html,body{height:100%;background:#050807;color:#fff;overflow:hidden;
       <div id="drawslot"><span style="font-size:20px">+</span>补牌位</div>
     </div>
     <div id="actions">
-      <button class="abtn" id="btn-stop">停 牌</button>
-      <button class="abtn" id="btn-draw">补一张</button>
+      <button class="abtn" id="btn-stop" aria-label="停牌"></button>
+      <button class="abtn" id="btn-draw" aria-label="补一张"></button>
     </div>
   </div>
   <div id="overlay"><div class="panel" id="panelbox"></div></div>
@@ -218,6 +204,7 @@ const PRESET = {
 
 /* ---------- 牌 ---------- */
 const SUITS = ["♠","♥","♣","♦"];
+const SUIT_L = {"♠":"S","♥":"H","♣":"C","♦":"D"};
 const RANK_STR = {1:"A",11:"J",12:"Q",13:"K"};
 function rankStr(r){ return RANK_STR[r] || String(r); }
 function buildDeck(){
@@ -404,7 +391,7 @@ const SEAT_ANGLES={1:[90],2:[150,30],3:[160,90,20],4:[170,115,65,10],5:[175,135,
   11:[139,90,41,163,17,197,343,222,142,270,38]};
 
 const AI_NAMES=["老陈","阿玲","阿海","阿芳","阿坤","阿杰","阿宝","阿强","阿龙","丽姐","小敏"];
-const AI_AVG=["陈","玲","海","芳","坤","杰","宝","强","龙","丽","敏"];
+const AI_FACE=["assets/avatars/avatar-m3.png","assets/avatars/avatar-f1.png","assets/avatars/avatar-m2.png","assets/avatars/avatar-f3.png","assets/avatars/avatar-f2.png","assets/avatars/avatar-m1.png","assets/avatars/avatar-f1.png","assets/avatars/avatar-m1.png","assets/avatars/avatar-m2.png","assets/avatars/avatar-f2.png","assets/avatars/avatar-f3.png"];
 
 const S={ round:0, ante:200, pot:0, players:[], myIdx:0, phase:"idle", bankerSeq:0 };
 
@@ -426,7 +413,7 @@ function renderSeats(){
     el.className="seat "+(vertical?"v"+(xl?" xl":""):(left?"l":"r"))+(p.inTurn?" act":"");
     el.style.left=x+"%"; el.style.top=y+"%";
     el.innerHTML=`
-      <div class="avwrap"><div class="avatar">${p.name[0]}</div>${p.banker?'<div class="bankerbadge">庄</div>':""}</div>
+      <div class="avwrap"><div class="avatar" style="background-image:url('${p.face}')"></div>${p.banker?'<div class="bankerbadge"></div>':""}</div>
       <div class="seatinfo">
         <span class="sname">${p.name}</span>
         <span class="schips"><span class="chip-ic"></span>${fmt(p.chips)}</span>
@@ -437,9 +424,9 @@ function renderSeats(){
   });
 }
 function cardHTML(c){
-  if(c.joker) return `<div class="pcard joker"><span class="rk">JOKER</span><span class="st">🃏</span><span class="rk" style="transform:rotate(180deg)">JOKER</span></div>`;
-  const red=(c.suit==="♥"||c.suit==="♦");
-  return `<div class="pcard${red?" red":""}"><span class="rk">${rankStr(c.rank)}${c.suit}</span><span class="st">${c.suit}</span><span class="rk" style="transform:rotate(180deg)">${rankStr(c.rank)}${c.suit}</span></div>`;
+  const jk = c.joker ? (c.red ? "J-1" : "J-2") : "";
+  const face = c.joker ? jk : `${SUIT_L[c.suit]}-${rankStr(c.rank)}`;
+  return `<div class="pcard"><img src="assets/cards/${face}.svg" alt=""></div>`;
 }
 function renderHand(){
   const me=S.players[S.myIdx];
@@ -474,7 +461,7 @@ const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 function makePlayers(n,ante){
   const ps=[];
   ps.push({id:"me",me:true,name:"阿洲",chips:12400,cards:[],stake:ante,banker:false});
-  for(let i=0;i<n-1;i++) ps.push({id:"ai"+i,me:false,name:AI_NAMES[i],chips:3000+i*1777,cards:[],stake:ante,banker:false});
+  for(let i=0;i<n-1;i++) ps.push({id:"ai"+i,me:false,name:AI_NAMES[i],face:AI_FACE[i],chips:3000+i*1777,cards:[],stake:ante,banker:false});
   ps[(S.bankerSeq)%n].banker=true;
   return ps;
 }
