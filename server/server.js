@@ -8,7 +8,7 @@ const E = require('./engine.js');
 
 const PORT = process.env.PORT || 3010;
 const MY_TURN_SEC = 15, AI_TURN_SEC = 5;
-const BOT_ROOM_COUNT = 3;
+const BOT_ROOM_COUNT = 5;
 
 const app = express();
 const httpServer = http.createServer(app);
