@@ -52,3 +52,23 @@ verdict_criteria_20261030:
   online_pass: "#conn='已连接' && sock.connected=true && #roominfo 含'房号 lobby' && #reconnect 无 show"
   online_fail_leftover: "#banner 静态初始值'连接中…'未清 (known_bugs/banner-stale-connecting), 严格按任务标准算 FAIL 项"
   dashboard_pass: "五卡全数字(活跃房间≥3, 机器人≥15) && 房间列表有 bot_*/lobby 行 && /musaiyu/api/stats 200"
+
+# ===== 2026-10-30 终验轮追加 =====
+
+atob_utf8_gotcha:
+  description: "eval(atob(b64)) 里 atob 返回 latin1 串, JS 源码中的中文字面量会变 mojibake (本轮实测: 中文正则键全废)"
+  workaround: "要么 JS 全 ASCII (匹配中文用 DOM text 对比/位置索引), 要么用 decodeURIComponent(escape(atob(b64))) 解码"
+  evidence: "metrics 正则键 '活跃房间' 等在 eval 后变成 'æ´»è·æ¿é´' → 全 null; 同 eval 里 DOM 取回的中文正常"
+
+pages_proxy_asymmetry_probe:
+  description: "判定 CF Pages 反代覆盖范围的快速双探针"
+  steps:
+    - action: eval (页面上下文)
+      js: "fetch('/musaiyu/api/stats') 相对路径 → 200 但 body 是 <!doctype html> = SPA fallback, 未反代"
+    - action: eval (页面上下文)
+      js: "fetch('https://shanbox绝对地址/musaiyu/api/stats') → TypeError: Failed to fetch = CORS 拦截"
+  conclusion: "pages.dev 反代了 /musaiyu/socket.io/* 没反代 /musaiyu/api/*; dashboard 的 ORIGIN 开关走了没被覆盖的跨域路"
+  fix_hint: "方案A: CF Pages Functions 把 /musaiyu/api/* 也反代到 shanbox, dashboard 删 ORIGIN 开关走相对路径 (与 socket 同路, 一致性最好); 方案B: shanbox 服务端加 Access-Control-Allow-Origin: https://musaiyu.pages.dev"
+
+dashboard_dash_render_note:
+  description: "dashboard 指标卡的 '—' 是 CSS 样式横杠(元素), 不是文本字符 — innerText 里 grep '—' 数量为 0, 判无数据别用文本横杠, 用卡内数字缺失+refresh err"

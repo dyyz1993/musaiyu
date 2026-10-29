@@ -13,15 +13,15 @@ const BOT_ROOM_COUNT = 3;
 const app = express();
 const httpServer = http.createServer(app);
 const io = new Server(httpServer, {
-  // shanbox 反代把全局 /socket.io/ 劫持给 yxx(3090)，musaiyu 必须走专属路径避开
+  // shanbox 反代把全局 /socket.io/ 劫持给 yxx(3090)，musaiyu 必须走专属路径避开；
+  // CORS 统一由 nginx add_header 出(重复 ACAO 头会被浏览器拒)，这里不配 cors
   path: '/musaiyu/socket.io/',
-  cors: { origin: '*' },
 });
 // shanbox 反代按子域名整站转发，页面挂在 /musaiyu/ 子路径下；剥掉前缀让静态和 API 复用同一套路由
+// CORS 头由 nginx 统一加，这里不能重复加(双 ACAO 浏览器判 CORS 失败)
 app.use((req, res, next) => {
   if (req.url === '/musaiyu') req.url = '/';
   else if (req.url.startsWith('/musaiyu/')) req.url = req.url.slice('/musaiyu'.length);
-  res.set('Access-Control-Allow-Origin', '*');
   next();
 });
 app.use(express.static(path.join(__dirname, 'public')));

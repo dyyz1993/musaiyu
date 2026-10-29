@@ -49,3 +49,19 @@ known_bugs:
     where: both
     symptom: "/favicon.ico 404"
     severity: cosmetic
+
+# ===== v3 追加 (2026-10-30 终验轮: 双通道) =====
+# Status: verified (2026-10-30 终验: shanbox online 全绿含两项修复; pages.dev online 冷验证通过; pages.dev dashboard 因应用 CORS bug 无数据)
+# Version: 3
+
+pages_channel:
+  online_url: "https://musaiyu.pages.dev/online"     # CF Pages, 无 .html; DOM 与 shanbox 同构(#conn/#myname/#banner b/#roominfo 全命中)
+  dashboard_url: "https://musaiyu.pages.dev/dashboard"
+  socket_io_actual: "同源相对路径 /musaiyu/socket.io/ (sock.io.opts.uri 为空) — CF Pages 把 /musaiyu/socket.io/* 反代到了 shanbox, WS 握手+joined 全通"
+  api_actual_BUG: "dashboard 代码里 ORIGIN 开关: hostname 含 pages.dev 时切绝对地址 https://musaiyu.shanbox...:8443 → 跨域 fetch 被 CORS 拦 (TypeError: Failed to fetch); 而 pages.dev 上的相对 /musaiyu/api/stats 落 SPA fallback 返回 HTML(200) — CF Pages 只反代了 socket.io 没反代 /musaiyu/api/*"
+  dashboard_header: "数据源: https://musaiyu.shanbox.19930810.xyz:8443/musaiyu · 自动刷新: 3s (pages.dev 版文案)"
+
+final_verdicts_20261030:
+  shanbox_online: "PASS — 已连接(ok) + #myname=阿洲(修复✓) + #banner=等待玩家加入…(修复✓) + joined(chips 12,400)"
+  pages_online: "PASS — 已连接(ok) + #myname=阿洲 + banner=等待玩家加入… + sock.connected=true (跨域通道经 CF Pages 反代可用)"
+  pages_dashboard: "FAIL — 五卡全无数字(渲染为样式横杠非文本), 房间列表无行, console 每~1s 'refresh err TypeError: Failed to fetch' (8s 冷会话 8 条), 根因 ORIGIN 跨域 fetch 被 CORS 拦"
