@@ -151,6 +151,8 @@ table.mx th,table.mx td{padding:2px;text-align:center;white-space:nowrap}
 table.mx thead th{vertical-align:bottom}
 table.mx .hname{font-size:10px;color:rgba(255,255,255,.85);font-weight:600;line-height:1.1}
 table.mx .hcards{display:flex;gap:1px;justify-content:center;margin-top:3px}
+table.mx .hsub{font-size:9.5px;font-weight:700;margin-top:2px;font-variant-numeric:tabular-nums}
+table.mx .hsub.pos{color:#7de3a8}.table.mx .hsub.neg{color:#ff8f86}
 table.mx .hc{width:16px;height:22px;border-radius:2px;background:#fff;overflow:hidden;
   box-shadow:0 0 0 1px rgba(217,180,92,.75)}
 table.mx .hc img{width:100%;height:100%;display:block}
@@ -232,6 +234,8 @@ table.mx .diag{background:rgba(255,255,255,.02)}
 /* ---------- 规则预设 duobi-v1（已冻结，不与其他版本混用） ---------- */
 const PRESET = {
   name: "duobi-v1",
+  startCards: 2,                   // 起手 2 张(SPEC: 起手2+补1=最多3)
+  maxCards: 3,                     // 最多 3 张
   deckSize: 55,                 // 52 + 大小王 + 1 张万能鬼（v1.1 冻结：使三鬼可达，同源码版牌组）
   straightAce: ["QKA","A23"],   // QKA、A23 成顺；KA2 不成
   // R2 冻结顺序: 双鬼＞天公9＞天公8＞三鬼＞真豹子＞同花顺＞假豹子＞混顺＞普通＞木虱
@@ -492,7 +496,12 @@ function renderHand(popLast){
   me.cards.forEach((c,i)=>{
     h.insertAdjacentHTML("beforeend",`<div class="pcard${popLast&&i===me.cards.length-1?" pop":""}"><img src="${cardFaceSrc(c)}" alt=""></div>`);
   });
-  if(me.cards.length<3) h.insertAdjacentHTML("beforeend",'<div id="drawslot"><span style="font-size:20px">+</span>补牌位</div>');
+  // 补牌位只在"可补且未补"时显示, 且做成可点(点了就补) —— 不补就保持 2 张
+  if(me.cards.length<PRESET.maxCards){
+    h.insertAdjacentHTML("beforeend",`<div id="drawslot" role="button" aria-label="补一张"><span style="font-size:20px">+</span>补牌位</div>`);
+    const slot=h.querySelector("#drawslot");
+    slot.onclick=()=>{ if(S.phase==="myturn"&&!S.drewThisTurn){ S.drewThisTurn=true; S.pendingDraw&&S.pendingDraw(); } };
+  }
   if(me.cards.length){
     const res=classifyHand(me.cards);
     const NAME={tianGong9:"天公 9",tianGong8:"天公 8",shuangGui:"双鬼",sanGui:"三鬼",zhenBaoZi:"豹子",tongHuaShun:"同花顺",jiaBaoZi:"假豹子",hunShun:"顺子",muShi:"木虱（0点）",normal:res.pts+" 点"};
@@ -597,7 +606,7 @@ async function startRound(){
 function dealOrder(){
   const n=S.players.length, bi=S.players.findIndex(p=>p.banker);
   const order=[];
-  for(let r=0;r<2;r++) for(let k=1;k<=n;k++) order.push(S.players[(bi+k)%n]);
+  for(let r=0;r<PRESET.startCards;r++) for(let k=1;k<=n;k++) order.push(S.players[(bi+k)%n]);
   return order;
 }
 async function deal(){
@@ -615,7 +624,7 @@ async function deal(){
   await sleep(250);
   // 起手单鬼强制补
   for(const p of dealOrder()){
-    if(p.cards.filter(c=>c.joker).length===1 && p.cards.length<3){
+    if(p.cards.filter(c=>c.joker).length===1 && p.cards.length<PRESET.maxCards){
       setBanner(`${p.name} 单鬼 · 强制补牌`);
       await flyCard(p.me ? $("#hand") : seatEl(p.id));
       p.cards.push(deck.pop());
@@ -628,20 +637,25 @@ async function deal(){
 async function decisionLoop(deck){
   S.phase="decision";
   for(const p of S.players){
-    if(p.cards.length>=3) continue;
+    if(p.cards.length>=PRESET.maxCards) continue;
     if(p.me){
       p.inTurn=true; renderSeats();
-      setBanner("轮到你 · 过 或 补一张");
-      $("#btn-stop").disabled=false; $("#btn-draw").disabled=false;
+      const canDraw=p.cards.length<PRESET.maxCards;
+      setBanner(canDraw?"轮到你 · 过 或 补一张":"轮到你 · 过");
+      $("#btn-stop").disabled=false; $("#btn-draw").disabled=!canDraw;
+      $("#btn-draw").style.display=canDraw?"flex":"none";
       let done=false;
-      const finish=(act)=>{ if(done) return; done=true; clearTimeout(ringTimer); stopRing();
-        p.inTurn=false; $("#btn-stop").disabled=true; $("#btn-draw").disabled=true; res(act); };
+      S.drewThisTurn=false;
+      S.pendingDraw=()=>{ if(done) return; p.cards.push(deck.pop()); renderHand(true); finish("draw"); };
+      const finish=(act)=>{ if(done) return; done=true; clearTimeout(ringTimer); stopRing(); S.pendingDraw=null;
+        p.inTurn=false; $("#btn-stop").disabled=true; $("#btn-draw").disabled=true;
+        $("#btn-draw").style.display="flex"; res(act); };
       const res=await new Promise(r=>{
         $("#btn-stop").onclick=()=>finish("pass");
         $("#btn-draw").onclick=()=>finish("draw");
         startRing(MY_TURN_SEC, ()=>{ setBanner("超时 · 自动过"); finish("pass"); });
       });
-      if(res==="draw"){ p.cards.push(deck.pop()); renderHand(true); }
+      if(res==="draw"){ if(p.cards.length<PRESET.maxCards){ p.cards.push(deck.pop()); renderHand(true);} }
       renderSeats();
     } else {
       p.inTurn=true; renderSeats();
@@ -651,7 +665,7 @@ async function decisionLoop(deck){
       stopRing();
       const r=classifyHand(p.cards);
       const good=["tianGong9","tianGong8","shuangGui","sanGui","zhenBaoZi","tongHuaShun","hunShun"].includes(r.type)||r.pts>=7;
-      if(!good&&p.cards.length<3&&Math.random()<0.8){
+      if(!good&&p.cards.length<PRESET.maxCards&&Math.random()<0.8){
         p.cards.push(deck.pop());
         setBanner(`${p.name} 补了一张`); renderSeats(); await sleep(600);
       } else { setBanner(`${p.name} 过`); renderSeats(); await sleep(450); }
@@ -706,11 +720,14 @@ function settle(){
     wtype.set(key(winner,loser), pr.winType);
   }
   const mini=c=>`<span class="hc"><img src="${cardFaceSrc(c)}"></span>`;
-  const head=ps.map(p=>`<th class="${p.me?"meh":""}"><div class="hname">${p.name}</div>
-      <div class="hcards">${(p.cards||[]).map(mini).join("")}</div></th>`).join("");
+  const head=ps.map(p=>{ const net=ledger[p.id]||0;
+      return `<th class="${p.me?"meh":""}"><div class="hname">${p.name}</div>
+      <div class="hcards">${(p.cards||[]).map(mini).join("")}</div>
+      <div class="hsub ${net>=0?"pos":"neg"}">${net>=0?"+":""}${fmt(net)}</div></th>`;}).join("");
   const body=ps.map((p,i)=>{
     const cells=ps.map((q,j)=>{
       if(i===j) return `<td class="diag"></td>`;
+      if(j<i) return `<td class="diag"></td>`;      // 下三角留空: 每对只显示一次
       const v=cell.get(key(i,j))||0;
       if(v===0) return `<td class="tie">平</td>`;
       const wt=wtype.get(key(i,j))||"";
