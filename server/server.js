@@ -1,5 +1,5 @@
-// 木虱鱼 · 服务端权威 v3 (duobi-v1)
-// 机器人自嗨房间 + 监控 API + 快速匹配
+// 木虱鱼 · 服务端权威 v4 (duobi-v1)
+// Bot 生态系统：多种性格/自动进房/跑路/换桌/举手/快速匹配/监控大盘
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -42,14 +42,24 @@ app.get('/api/rooms/:roomId', (req, res) => {
     players: room.players.map(p => ({ pid: p.pid, name: p.name, chips: p.chips, cards: p.cards, banker: p.banker, isBot: p.isBot })) });
 });
 
-/* ==================== 工具 ==================== */
+/* ==================== 常量 ==================== */
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-const BOT_NAMES = ["阿强","阿龙","丽姐","小敏","阿凯","老王","阿芳","阿杰","阿宝","阿海","阿坤"];
+const BOT_NAMES = ["阿强","阿龙","丽姐","小敏","阿凯","老王","阿芳","阿杰","阿宝","阿海","阿坤",
+  "大白","铁柱","小翠","阿福","春花","狗剩","铁蛋"];
 const BOT_FACES = ["assets/avatars/avatar-m1.png","assets/avatars/avatar-f1.png","assets/avatars/avatar-m2.png",
   "assets/avatars/avatar-f2.png","assets/avatars/avatar-m3.png","assets/avatars/avatar-f3.png",
   "assets/avatars/avatar-m1.png","assets/avatars/avatar-f1.png","assets/avatars/avatar-m2.png",
-  "assets/avatars/avatar-f3.png","assets/avatars/avatar-f1.png"];
+  "assets/avatars/avatar-f3.png","assets/avatars/avatar-f2.png","assets/avatars/avatar-m3.png",
+  "assets/avatars/avatar-m1.png","assets/avatars/avatar-f1.png","assets/avatars/avatar-m2.png",
+  "assets/avatars/avatar-f3.png","assets/avatars/avatar-f2.png","assets/avatars/avatar-m3.png"];
 const BOT_PREFIX = "bot_";
+const PERSONALITIES = {
+  aggressive:   { drawBias: 0.85, speed: 0.6, leaveChance: 0.15, raiseChance: 0.3 },
+  conservative: { drawBias: 0.15, speed: 1.4, leaveChance: 0.05, raiseChance: 0.1 },
+  normal:       { drawBias: 0.5, speed: 1.0, leaveChance: 0.08, raiseChance: 0.2 },
+  chaotic:      { drawBias: 0.6, speed: 0.5, leaveChance: 0.35, raiseChance: 0.5 },
+};
+const PERSONALITY_KEYS = Object.keys(PERSONALITIES);
 
 /* ==================== 房间 ==================== */
 const rooms = new Map();
@@ -69,6 +79,7 @@ class Room {
   isFull() { return this.seated >= this.maxPlayers; }
   findPlayer(pid) { return this.players.find(p => p.pid === pid); }
   get realPlayers() { return this.players.filter(p => !p.isBot); }
+  get botPlayers() { return this.players.filter(p => p.isBot); }
   addPlayer(sid, pid, name, face, isBot = false) {
     const p = { pid, id: pid, sid: sid || null, name, face: face || '', isBot,
       chips: isBot ? 3000 + Math.floor(Math.random() * 8000) : 12400,
@@ -83,7 +94,9 @@ class Room {
   fillBots(target) {
     while (this.players.length < target) {
       const i = this.players.length;
+      const personality = PERSONALITY_KEYS[Math.floor(Math.random() * PERSONALITY_KEYS.length)];
       this.addBot(BOT_NAMES[i % BOT_NAMES.length], BOT_FACES[i % BOT_FACES.length]);
+      this.players[this.players.length - 1].personality = personality;
     }
   }
   actionOrder() {
@@ -96,10 +109,6 @@ class Room {
 
 /* ==================== 广播 ==================== */
 function broadcast(room, event, data) { io.to(room.id).emit(event, data); }
-function toPlayer(room, pid, event, data) {
-  const p = room.findPlayer(pid);
-  if (p && p.sid) io.to(p.sid).emit(event, data);
-}
 function publicState(room) {
   return {
     roomId: room.id, phase: room.phase, round: room.round, pot: room.pot,
@@ -181,7 +190,7 @@ async function startDecision(room) {
   }
   reveal(room);
 }
-function waitPlayerAction(room, p) {
+async function waitPlayerAction(room, p) {
   return new Promise(res => {
     const timeout = setTimeout(() => { playerAction(room, p.pid, 'pass', true); res(); }, MY_TURN_SEC * 1000);
     room.timers[p.pid] = { timeout, resolve: res };

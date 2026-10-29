@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>木虱鱼 · 大盘监控</title>
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<style>
+:root{--gold:#d9b45c;--gold-hi:#f2ce78;--felt:#0d3b2a;--bg:#04150f;
+  --card:#0f241a;--line:rgba(217,180,92,.3);--sub:#9fb8ac;
+  --win:#7de3a8;--lose:#ff8f86;--srv:#e8a33d}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:#fff;font-family:-apple-system,"PingFang SC",sans-serif;padding:20px;line-height:1.55}
+.wrap{max-width:900px;margin:0 auto}
+h1{font-size:22px;color:var(--gold-hi);margin-bottom:4px}
+.sub{font-size:12px;color:var(--sub);margin-bottom:20px}
+h2{font-size:15px;color:var(--gold);margin:24px 0 10px;padding-left:10px;border-left:3px solid var(--gold)}
+.stats{display:flex;gap:12px;flex-wrap:wrap;margin:16px 0}
+.scard{flex:1;min-width:140px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+.scard .num{font-size:28px;font-weight:900;color:var(--gold-hi)}
+.scard .lbl{font-size:11px;color:var(--sub);margin-top:2px}
+.roomtable{width:100%;border-collapse:collapse;font-size:12px;margin:8px 0}
+.roomtable th,.roomtable td{padding:6px 10px;text-align:left;border-bottom:1px solid rgba(255,255,255,.06)}
+.roomtable th{color:var(--gold);font-size:11px;font-weight:600}
+.roomtable tr:hover td{background:rgba(217,180,92,.05)}
+.badge{display:inline-block;padding:1px 8px;border-radius:10px;font-size:10px;font-weight:700}
+.b-wait{background:#555;color:#ccc}.b-deal{background:#2980b9;color:#fff}
+.b-dec{background:#e67e22;color:#fff}.b-rev{background:#8e44ad;color:#fff}
+.b-settle{background:#27ae60;color:#fff}.b-play{background:#27ae60;color:#fff}
+.refresh{font-size:10px;color:var(--sub);margin:16px 0 4px}
+a{color:var(--gold);text-decoration:none}
+.linkbox{margin-top:16px;padding:12px;background:var(--card);border:1px solid var(--line);border-radius:10px}
+.linkbox a{display:block;padding:4px 0;font-size:13px}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>🐟 木虱鱼 · 大盘</h1>
+<div class="sub">实时监控 · 数据源: <span id="srv-url"></span></div>
+
+<div class="stats">
+  <div class="scard"><div class="num" id="st-rooms">—</div><div class="lbl">活跃房间</div></div>
+  <div class="scard"><div class="num" id="st-online">—</div><div class="lbl">在线玩家</div></div>
+  <div class="scard"><div class="num" id="st-bots">—</div><div class="lbl">机器人</div></div>
+  <div class="scard"><div class="num" id="st-rounds">—</div><div class="lbl">总局数</div></div>
+  <div class="scard"><div class="num" id="st-turnover">—</div><div class="lbl">总流水</div></div>
+</div>
+
+<h2>房间列表</h2>
+<table class="roomtable">
+  <tr><th>房间</th><th>阶段</th><th>局数</th><th>在线</th><th>真人</th><th>机器人</th><th>底注</th><th>流水</th></tr>
+  <tbody id="roomlist"><tr><td colspan="8">加载中…</td></tr></tbody>
+</table>
+
+<div class="linkbox">
+  <b>游戏入口</b>
+  <a href="/online.html">→ 进入游戏 (联机版)</a>
+  <a href="/">→ 单机版</a>
+  <a href="/spec-timeline.html">→ 时序图/状态设计</a>
+</div>
+
+<div class="refresh">自动刷新: <span id="refresh-in">5</span>s</div>
+</div>
+
+<script>
+const API = window.location.hostname.includes("pages.dev")
+  ? "https://yxx.shanbox.19930810.xyz:8443/musaiyu/api"
+  : "/musaiyu/api";
+
+async function refresh(){
+  try{
+    const [statsRes, roomsRes] = await Promise.all([
+      fetch(API + "/api/stats"),
+      fetch(API + "/socket.io/?EIO=4&transport=polling").catch(()=>null)
+    ]);
+    const d = await statsRes.json();
+    document.getElementById("st-rooms").textContent = d.totalRooms;
+    document.getElementById("st-online").textContent = d.totalOnline;
+    document.getElementById("st-bots").textContent = d.totalBots;
+    document.getElementById("st-rounds").textContent = d.totalRounds;
+    document.getElementById("st-turnover").textContent = fmt(d.totalTurnover);
+    const tb = document.getElementById("roomlist");
+    tb.innerHTML = "";
+    for(const r of d.rooms){
+      const phaseMap = {waiting:"等人",dealing:"发牌",decision:"决策",reveal:"摊牌",settle:"结算",playing:"对局中",betting_confirm:"下注"};
+      tb.innerHTML += `<tr>
+        <td>${r.roomId.slice(0,12)}</td>
+        <td><span class="badge b-${r.phase.slice(0,4)}">${phaseMap[r.phase]||r.phase}</span></td>
+        <td>${r.round}</td><td>${r.online}</td><td>${r.real}</td><td>${r.bots}</td>
+        <td>${r.ante}</td><td>${fmt(r.turnover)}</td></tr>`;
+    }
+  }catch(e){ console.error("refresh err", e); }
+}
+function fmt(n){ return n.toLocaleString("en-US"); }
+let count=5;
+setInterval(()=>{ count--; document.getElementById("refresh-in").textContent=count;
+  if(count<=0){ count=5; refresh(); } },1000);
+document.getElementById("srv-url").textContent = API;
+refresh();
+setInterval(refresh, 5000);
+</script>
+</body>
+</html>
