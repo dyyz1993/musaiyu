@@ -258,6 +258,12 @@ async function runBotRound(room) {
   room.players.forEach(p => { p.banker = false; p.cards = []; p.inTurn = false; });
   room.bankerSeq++;
   room.players[room.bankerSeq % room.players.length].banker = true;
+  // 与 startRound 同一套注额/流水语义（原缺失导致 bot 房流水恒 0）
+  room.players.forEach(p => { p.stake = Math.min(room.ante, Math.max(1, p.chips)); p.folded = false; });
+  room.pot = room.players.reduce((s, p) => s + p.stake, 0);
+  room.stats.turnover += room.pot;
+  room.stats.betCount++;
+  room.stats.lastActivity = Date.now();
   broadcast(room, 'room_state', publicState(room));
   await sleep(2000);
   const order = room.actionOrder();

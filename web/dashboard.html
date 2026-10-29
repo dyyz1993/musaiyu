@@ -3,105 +3,172 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>木虱鱼 · 大盘监控</title>
-<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<title>木虱鱼 · 实时监控</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 <style>
-:root{--gold:#d9b45c;--gold-hi:#f2ce78;--felt:#0d3b2a;--bg:#04150f;
-  --card:#0f241a;--line:rgba(217,180,92,.3);--sub:#9fb8ac;
-  --win:#7de3a8;--lose:#ff8f86;--srv:#e8a33d}
-*{box-sizing:border-box;margin:0;padding:0}
-body{background:var(--bg);color:#fff;font-family:-apple-system,"PingFang SC",sans-serif;padding:20px;line-height:1.55}
-.wrap{max-width:900px;margin:0 auto}
-h1{font-size:22px;color:var(--gold-hi);margin-bottom:4px}
-.sub{font-size:12px;color:var(--sub);margin-bottom:20px}
-h2{font-size:15px;color:var(--gold);margin:24px 0 10px;padding-left:10px;border-left:3px solid var(--gold)}
-.stats{display:flex;gap:12px;flex-wrap:wrap;margin:16px 0}
-.scard{flex:1;min-width:140px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
-.scard .num{font-size:28px;font-weight:900;color:var(--gold-hi)}
-.scard .lbl{font-size:11px;color:var(--sub);margin-top:2px}
-.roomtable{width:100%;border-collapse:collapse;font-size:12px;margin:8px 0}
-.roomtable th,.roomtable td{padding:6px 10px;text-align:left;border-bottom:1px solid rgba(255,255,255,.06)}
-.roomtable th{color:var(--gold);font-size:11px;font-weight:600}
-.roomtable tr:hover td{background:rgba(217,180,92,.05)}
-.badge{display:inline-block;padding:1px 8px;border-radius:10px;font-size:10px;font-weight:700}
-.b-wait{background:#555;color:#ccc}.b-deal{background:#2980b9;color:#fff}
-.b-dec{background:#e67e22;color:#fff}.b-rev{background:#8e44ad;color:#fff}
-.b-settle{background:#27ae60;color:#fff}.b-play{background:#27ae60;color:#fff}
-.refresh{font-size:10px;color:var(--sub);margin:16px 0 4px}
-a{color:var(--gold);text-decoration:none}
-.linkbox{margin-top:16px;padding:12px;background:var(--card);border:1px solid var(--line);border-radius:10px}
-.linkbox a{display:block;padding:4px 0;font-size:13px}
+:root{--gold:#f2ce78;--bg:#04150f;--card:#08221a;--line:#1d4634;--green:#5ed982;--red:#e5564c}
+*{box-sizing:border-box}
+body{margin:0;background:radial-gradient(ellipse at 50% 0%,#0a2e20,var(--bg) 70%);color:#fff5dc;
+  font-family:system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;min-height:100vh;padding:18px}
+.header{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:14px}
+h1{margin:0;font-size:22px;color:var(--gold)}
+.sub{font-size:12px;color:#9db8a8;margin-top:2px}
+.refresh-badge{display:flex;align-items:center;gap:7px;font-size:12px;color:#cfe8d8;
+  border:1px solid var(--line);border-radius:20px;padding:5px 12px;background:#061b12}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--green);animation:pulse 1.6s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:14px}
+.stat{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+.stat .label{font-size:12px;color:#9db8a8}
+.stat .value{font-size:26px;font-weight:800;margin-top:4px;font-variant-numeric:tabular-nums}
+.green{color:var(--green)} .gold{color:var(--gold)}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;min-width:0}
+.card.full{grid-column:1/-1}
+.card h2{margin:0 0 10px;font-size:15px;color:var(--gold);font-weight:700}
+canvas{max-height:260px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{color:#9db8a8;font-weight:600;text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)}
+td{padding:7px 8px;border-bottom:1px solid #0d2f22;font-variant-numeric:tabular-nums}
+.badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;background:#123b2b;color:#cfe8d8}
+.b-play{background:#123b2b;color:var(--green)} .b-wait{background:#3b3212;color:var(--gold)}
+.pbar{height:5px;border-radius:3px;background:#0d2f22;min-width:70px;overflow:hidden}
+.pbar i{display:block;height:100%;border-radius:3px;background:linear-gradient(90deg,#2e8b57,var(--gold))}
+#event-log{max-height:230px;overflow-y:auto;font-size:12.5px;font-family:ui-monospace,Menlo,monospace;line-height:1.8}
+#event-log .t{color:#6f8f7e;margin-right:6px}
+.up{color:var(--green)} .down{color:var(--red)}
+@media(max-width:760px){.grid{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
-<div class="wrap">
-<h1>🐟 木虱鱼 · 大盘</h1>
-<div class="sub">实时监控 · 数据源: <span id="srv-url"></span></div>
+<div class="header">
+  <div><h1>🂡 木虱鱼 · 实时监控</h1><div class="sub">shanbox:3010 · supervisord 托管 · 快照持久化</div></div>
+  <div class="refresh-badge"><span class="dot"></span><span id="tick">5s 自动刷新</span></div>
+</div>
 
 <div class="stats">
-  <div class="scard"><div class="num" id="st-rooms">—</div><div class="lbl">活跃房间</div></div>
-  <div class="scard"><div class="num" id="st-online">—</div><div class="lbl">在线玩家</div></div>
-  <div class="scard"><div class="num" id="st-bots">—</div><div class="lbl">机器人</div></div>
-  <div class="scard"><div class="num" id="st-rounds">—</div><div class="lbl">总局数</div></div>
-  <div class="scard"><div class="num" id="st-turnover">—</div><div class="lbl">总流水</div></div>
+  <div class="stat"><div class="label">活跃房间</div><div class="value gold" id="st-rooms">--</div></div>
+  <div class="stat"><div class="label">在线玩家</div><div class="value" id="st-online">--</div></div>
+  <div class="stat"><div class="label">机器人</div><div class="value" id="st-bots">--</div></div>
+  <div class="stat"><div class="label">真人玩家</div><div class="value green" id="st-real">--</div></div>
+  <div class="stat"><div class="label">总局数</div><div class="value" id="st-rounds">--</div></div>
+  <div class="stat"><div class="label">总流水</div><div class="value gold" id="st-turnover">--</div></div>
 </div>
 
-<h2>房间列表</h2>
-<table class="roomtable">
-  <tr><th>房间</th><th>阶段</th><th>局数</th><th>在线</th><th>真人</th><th>机器人</th><th>底注</th><th>流水</th></tr>
-  <tbody id="roomlist"><tr><td colspan="8">加载中…</td></tr></tbody>
-</table>
-
-<div class="linkbox">
-  <b>游戏入口</b>
-  <a href="/online.html">→ 进入游戏 (联机版)</a>
-  <a href="/">→ 单机版</a>
-  <a href="/spec-timeline.html">→ 时序图/状态设计</a>
-</div>
-
-<div class="refresh">自动刷新: <span id="refresh-in">5</span>s</div>
+<div class="grid">
+  <div class="card full"><h2>💰 各房间资金走势（实时累计）</h2><canvas id="money-chart" height="110"></canvas></div>
+  <div class="card"><h2>📊 各房流水对比</h2><canvas id="turnover-chart" height="150"></canvas></div>
+  <div class="card"><h2>📈 实时事件流（结算 / 筹码变动）</h2><div id="event-log"></div></div>
+  <div class="card full"><h2>🀄 房间列表与进度</h2>
+    <table><thead><tr><th>房间</th><th>状态</th><th>局数</th><th>在线</th><th>真人</th><th>bot</th><th>底注</th><th>流水进度</th><th>流水</th></tr></thead>
+    <tbody id="roomlist"><tr><td colspan="9">加载中…</td></tr></tbody></table>
+  </div>
 </div>
 
 <script>
 const API = window.location.hostname.includes("pages.dev")
   ? "https://musaiyu.shanbox.19930810.xyz:8443/musaiyu"
   : "/musaiyu";
-/* socket.io 走 /musaiyu/socket.io/ 专属路径(全局 /socket.io/ 被 yxx 劫持)，健康探测用它 */
-const ORIGIN = window.location.hostname.includes("pages.dev")
-  ? "https://musaiyu.shanbox.19930810.xyz:8443"
-  : "";
+const POLL_MS = 5000;
+const PALETTE = ["#f2ce78","#5ed982","#6fb3ff","#ff9f6f","#d78cf2","#5adcd8","#f2789f","#b8e05a","#ffa94d","#7f9cf5"];
+
+let moneyChart = null, turnoverChart = null;
+const trendLabels = [];                     // 时间轴
+const trendData = {};                       // roomId -> [sumChips,...]
+const lastPlayers = {};                     // `${roomId}|${pid}` -> chips（事件流差分）
+const lastRounds = {};                      // roomId -> round
+const events = [];
+
+function fmt(n){ return (n??0).toLocaleString("en-US"); }
+function short(id){ return id.startsWith("bot_") ? "房 "+id.slice(4,10) : "房 "+id.slice(0,8); }
+function addEvent(html){
+  events.unshift(`<span class="t">${new Date().toLocaleTimeString("zh-CN",{hour12:false})}</span>${html}`);
+  if (events.length > 40) events.pop();
+  document.getElementById("event-log").innerHTML = events.join("<br>");
+}
+
+function initCharts(){
+  const mc = document.getElementById("money-chart").getContext("2d");
+  moneyChart = new Chart(mc, { type:"line", data:{ labels:[], datasets:[] },
+    options:{ animation:false, responsive:true, maintainAspectRatio:true,
+      plugins:{ legend:{ labels:{ color:"#cfe8d8", boxWidth:12, font:{size:11} } } },
+      scales:{ x:{ ticks:{ color:"#6f8f7e", maxTicksLimit:8 }, grid:{ color:"#0d2f22" } },
+               y:{ ticks:{ color:"#6f8f7e" }, grid:{ color:"#0d2f22" } } } } });
+  const tc = document.getElementById("turnover-chart").getContext("2d");
+  turnoverChart = new Chart(tc, { type:"bar", data:{ labels:[], datasets:[{ data:[], backgroundColor:"#f2ce78aa", borderRadius:4 }] },
+    options:{ animation:false, plugins:{ legend:{ display:false } },
+      scales:{ x:{ ticks:{ color:"#6f8f7e", font:{size:10} }, grid:{ display:false } },
+               y:{ ticks:{ color:"#6f8f7e" }, grid:{ color:"#0d2f22" } } } } });
+}
 
 async function refresh(){
-  try{
-    const [statsRes, roomsRes] = await Promise.all([
-      fetch(API + "/api/stats"),
-      fetch(ORIGIN + "/musaiyu/socket.io/?EIO=4&transport=polling").catch(()=>null)
-    ]);
-    const d = await statsRes.json();
-    document.getElementById("st-rooms").textContent = d.totalRooms;
-    document.getElementById("st-online").textContent = d.totalOnline;
-    document.getElementById("st-bots").textContent = d.totalBots;
-    document.getElementById("st-rounds").textContent = d.totalRounds;
-    document.getElementById("st-turnover").textContent = fmt(d.totalTurnover);
-    const tb = document.getElementById("roomlist");
-    tb.innerHTML = "";
-    for(const r of d.rooms){
-      const phaseMap = {waiting:"等人",dealing:"发牌",decision:"决策",reveal:"摊牌",settle:"结算",playing:"对局中",betting_confirm:"下注"};
-      tb.innerHTML += `<tr>
-        <td>${r.roomId.slice(0,12)}</td>
-        <td><span class="badge b-${r.phase.slice(0,4)}">${phaseMap[r.phase]||r.phase}</span></td>
-        <td>${r.round}</td><td>${r.online}</td><td>${r.real}</td><td>${r.bots}</td>
-        <td>${r.ante}</td><td>${fmt(r.turnover)}</td></tr>`;
+  const d = await (await fetch(API + "/api/stats")).json();
+  document.getElementById("st-rooms").textContent = d.totalRooms;
+  document.getElementById("st-online").textContent = d.totalOnline;
+  document.getElementById("st-bots").textContent = d.totalBots;
+  document.getElementById("st-rounds").textContent = d.totalRounds;
+  document.getElementById("st-turnover").textContent = fmt(d.totalTurnover);
+  const maxTo = Math.max(1, ...d.rooms.map(r => r.turnover));
+  const phaseMap = { waiting:"等人", dealing:"发牌", decision:"决策", reveal:"摊牌", settle:"结算", playing:"对局中", betting_confirm:"下注" };
+
+  // 房间表 + 进度条
+  const tb = document.getElementById("roomlist");
+  tb.innerHTML = d.rooms.map(r => `<tr>
+    <td>${short(r.roomId)}</td>
+    <td><span class="badge b-${r.phase==="playing"?"play":"wait"}">${phaseMap[r.phase]||r.phase}</span></td>
+    <td>${r.round}</td><td>${r.online}</td><td>${r.real}</td><td>${r.bots}</td><td>${r.ante}</td>
+    <td><div class="pbar"><i style="width:${Math.round(r.turnover/maxTo*100)}%"></i></div></td>
+    <td>${fmt(r.turnover)}</td></tr>`).join("");
+
+  // 各房玩家筹码（并行拉详情，做走势 + 事件差分）
+  const details = await Promise.all(d.rooms.map(r =>
+    fetch(API + "/api/rooms/" + r.roomId).then(x => x.json()).catch(() => null)));
+  const nowTick = new Date().toLocaleTimeString("zh-CN",{hour12:false});
+  trendLabels.push(nowTick); if (trendLabels.length > 40) trendLabels.shift();
+
+  d.rooms.forEach((r, i) => {
+    const det = details[i]; if (!det || !det.players) return;
+    // 事件：局数推进
+    if (lastRounds[r.roomId] !== undefined && det.round > lastRounds[r.roomId])
+      addEvent(`${short(r.roomId)} 进入第 ${det.round} 局`);
+    lastRounds[r.roomId] = det.round;
+    // 事件：筹码变动（= 刚结算过的输赢）
+    let sum = 0;
+    for (const p of det.players) {
+      sum += p.chips;
+      const key = r.roomId + "|" + p.pid;
+      const prev = lastPlayers[key];
+      if (prev !== undefined && p.chips !== prev) {
+        const diff = p.chips - prev;
+        addEvent(`${short(r.roomId)} <b>${p.name}</b> ${diff>0?`<span class="up">+${fmt(diff)}</span>`:`<span class="down">-${fmt(-diff)}</span>`}`);
+      }
+      lastPlayers[key] = p.chips;
     }
-  }catch(e){ console.error("refresh err", e); }
+    // 走势：每房筹码总和
+    if (!trendData[r.roomId]) trendData[r.roomId] = [];
+    const arr = trendData[r.roomId]; arr.push(sum);
+    if (arr.length > 40) arr.shift();
+  });
+  // 清掉已消失的房
+  for (const k of Object.keys(trendData)) if (!d.rooms.find(r => r.roomId === k)) delete trendData[k];
+
+  // 图表更新
+  moneyChart.data.labels = trendLabels;
+  moneyChart.data.datasets = Object.entries(trendData).map(([rid, arr], i) => ({
+    label: short(rid), data: arr, borderColor: PALETTE[i % PALETTE.length],
+    backgroundColor: PALETTE[i % PALETTE.length] + "22", tension: .3, pointRadius: 0, borderWidth: 2,
+  }));
+  moneyChart.update("none");
+  turnoverChart.data.labels = d.rooms.map(r => short(r.roomId) + `(${r.ante})`);
+  turnoverChart.data.datasets[0].data = d.rooms.map(r => r.turnover);
+  turnoverChart.update("none");
+
+  document.getElementById("tick").textContent = "更新于 " + nowTick;
 }
-function fmt(n){ return n.toLocaleString("en-US"); }
-let count=5;
-setInterval(()=>{ count--; document.getElementById("refresh-in").textContent=count;
-  if(count<=0){ count=5; refresh(); } },1000);
-document.getElementById("srv-url").textContent = API;
-refresh();
-setInterval(refresh, 5000);
+
+initCharts();
+refresh().catch(e => console.error("refresh err", e));
+setInterval(() => refresh().catch(e => console.error("refresh err", e)), POLL_MS);
 </script>
 </body>
 </html>
