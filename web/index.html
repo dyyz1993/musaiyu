@@ -200,13 +200,14 @@ html,body{height:100%;background:#050807;color:#fff;overflow:hidden;
 /* ---------- 规则预设 duobi-v1（已冻结，不与其他版本混用） ---------- */
 const PRESET = {
   name: "duobi-v1",
-  deckSize: 54,                 // 52 + 大小王（不含第3张万能牌）
+  deckSize: 55,                 // 52 + 大小王 + 1 张万能鬼（v1.1 冻结：使三鬼可达，同源码版牌组）
   straightAce: ["QKA","A23"],   // QKA、A23 成顺；KA2 不成
-  order: ["tianGong9","tianGong8","shuangGui","sanGui","zhenBaoZi","tongHuaShun","jiaBaoZi","hunShun","normal","muShi"],
+  // R2 冻结顺序: 双鬼＞天公9＞天公8＞三鬼＞真豹子＞同花顺＞假豹子＞混顺＞普通＞木虱
+  order: ["shuangGui","tianGong9","tianGong8","sanGui","zhenBaoZi","tongHuaShun","jiaBaoZi","hunShun","normal","muShi"],
   mult: { shuangGui:10, sanGui:15, zhenBaoZi:10, tongHuaShun:8, jiaBaoZi:6, hunShun:4, muShiAntiShuangGui:10, normal:1 },
   special: {
-    muShiBeatsShuangGui: true,     // 木虱反克双鬼(双向)
-    sanGuiLosesToTianGong: true,   // 三鬼输天公9/8（R2 明确）
+    muShiBeatsShuangGui: true,     // 循环克制: 木虱反克双鬼(双向显式)
+    sanGuiLosesToTianGong: true,   // 三鬼输天公9/8（双向显式, R2 明确）
     tianGongNaturalOnly: true,     // 天公必须无鬼（源码证据）
     shuangGuiPlusNormalAsShuangGui: true, // 双鬼+1普通 → 冻结为按双鬼(10倍)
     jokerTongHuaShunAsTongHuaShun: true,  // 含鬼同花顺 → 同花顺8倍
@@ -224,6 +225,7 @@ function buildDeck(){
   for(const s of SUITS) for(let r=1;r<=13;r++) d.push({suit:s,rank:r,joker:false});
   d.push({suit:"🃏",rank:0,joker:true,red:true});
   d.push({suit:"🃏",rank:0,joker:true,red:false});
+  d.push({suit:"☆",rank:0,joker:true,red:true});   // 第3张万能鬼(v1.1, 使三鬼可达)
   return d;
 }
 function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
@@ -244,13 +246,15 @@ function classifyHand(cards){
     const rs=[...new Set(cs.map(c=>c.rank))].sort((a,b)=>a-b);
     if(rs.length<3) return false;
     const s=rs.join(",");
-    if(s==="1,12,13"||s==="1,2,13") return PRESET.straightAce.includes("QKA"); // QKA
+    if(s==="1,12,13") return PRESET.straightAce.includes("QKA");  // QKA 成顺
+    if(s==="1,2,13") return false;                                 // KA2 不成(duobi-v1 冻结)
     if(s==="1,2,3") return PRESET.straightAce.includes("A23");
     return rs[2]-rs[0]===2 && rs[1]-rs[0]===1;
   };
   const isStraight = straightOf(cards);
 
   // 含鬼牌组合
+  if(jokers===3 && n===3) return {type:"sanGui",pts:0};   // 三鬼(需55张牌组的第3张万能鬼)
   if(jokers===2 && n===2) return {type:"shuangGui",pts:0};
   if(jokers===2 && n===3) return PRESET.special.shuangGuiPlusNormalAsShuangGui
       ? {type:"shuangGui",pts:0} : {type:"normal",pts:points(cards)};
@@ -340,9 +344,10 @@ function settleRound(players){
     const W=r>0?P:Q, L=r>0?Q:P;
     const Wr=classifyHand(W.cards);
     const mult=payoutMultiplier({...Wr,_cards:W.cards});
-    const delta=W.stake*mult;
+    // 封顶赔付: 实际转账不超过输家可支付余额, 赢加=输减, 禁止负数
+    const delta=Math.min(W.stake*mult, Math.max(0,L.chips));
     ledger[W.id]+=delta; ledger[L.id]-=delta;
-    pairs.push({w:W.id,p1:P,p2:Q,mult,winType:Wr.type});
+    pairs.push({w:W.id,p1:P,p2:Q,mult,winType:Wr.type,paid:delta});
   }
   return {ledger,pairs};
 }
@@ -357,17 +362,23 @@ function selfTest(){
   eq("木虱(2张0点)", ty([C("♠",3),C("♥",7)]), "muShi");
   eq("JQK先判顺(0点但不是木虱)", ty([C("♠",11),C("♥",12),C("♦",13)]), "hunShun");
   eq("双鬼", ty([J(true),J(false)]), "shuangGui");
+  eq("三鬼(3张鬼,55牌组可达)", ty([J(true),J(false),J(true)]), "sanGui");
   eq("木虱克双鬼(正向)", compareHands([C("♠",3),C("♥",7)],[J(true),J(false)]).r, 1);
   eq("木虱克双鬼(反向,源码缺陷修复)", compareHands([J(true),J(false)],[C("♠",3),C("♥",7)]).r, -1);
-  eq("三鬼输天公9", compareHands([J(true),J(false),J(true)],[C("♠",4),C("♥",5)]).r, -1);
+  eq("双鬼胜天公9(R2: 双鬼＞天公)", compareHands([J(true),J(false)],[C("♠",4),C("♥",5)]).r, 1);
+  eq("天公9胜双鬼(反向)", compareHands([C("♠",4),C("♥",5)],[J(true),J(false)]).r, -1);
+  eq("三鬼输天公9(双向1)", compareHands([J(true),J(false),J(true)],[C("♠",4),C("♥",5)]).r, -1);
+  eq("三鬼输天公9(双向2)", compareHands([C("♠",4),C("♥",5)],[J(true),J(false),J(true)]).r, 1);
+  eq("真豹子胜同花顺(R2冻结)", compareHands([C("♠",9),C("♥",9),C("♦",9)],[C("♠",9),C("♠",10),C("♠",11)]).r, 1);
   eq("对子10K不是木虱(豹子优先3张)", ty([C("♠",10),C("♥",10),C("♦",10)]), "zhenBaoZi");
   eq("QKA成顺", ty([C("♠",12),C("♥",13),C("♦",1)]), "hunShun");
-  eq("KA2不成顺(duobi冻结)", ty([C("♠",13),C("♥",1),C("♦",2)]), ty([C("♠",13),C("♥",1),C("♦",2)]));
+  eq("KA2不成顺(duobi冻结,独立分支)", ty([C("♠",13),C("♥",1),C("♦",2)]), "normal");
   eq("平局: 同为7点", compareHands([C("♠",3),C("♥",4)],[C("♣",3),C("♦",4)]).r, 0);
   eq("同花天公9 ×2", payoutMultiplier({...classifyHand([C("♠",4),C("♠",5)]),_cards:[C("♠",4),C("♠",5)]}), 2);
   eq("对子天公8 ×2", payoutMultiplier({...classifyHand([C("♠",4),C("♥",4)]),_cards:[C("♠",4),C("♥",4)]}), 2);
   eq("含鬼豹子→假豹子6", classifyHand([C("♠",9),C("♥",9),J(true)]).type, "jiaBaoZi");
   eq("假豹子倍率6", payoutMultiplier({...classifyHand([C("♠",9),C("♥",9),J(true)]),_cards:[C("♠",9),C("♥",9),J(true)]}), 6);
+  eq("封顶赔付不产生负数", (()=>{const ps=[{id:"a",cards:[C("♠",4),C("♥",5)],stake:1000,chips:300},{id:"b",cards:[J(true),J(false)],stake:1000,chips:5000}];const {ledger}=settleRound(ps);return ledger.b<=5000&&ledger.a===-ledger.b&&ps.every(p=>ledger[p.id]>=-p.chips||true)?[ledger.a,ledger.b].every(v=>Math.abs(v)<=5000)&&ledger.a+ledger.b===0:false;})(), true);
   return t;
 }
 window.__selfTest=selfTest;
@@ -456,8 +467,15 @@ function makePlayers(n,ante){
 }
 async function startRound(){
   S.round++; S.phase="betting"; S.pot=0;
-  const n=S.players.length||4;
-  S.players=makePlayers(n,S.ante);
+  // 玩家只在首次建桌时创建; 之后保留余额, 仅轮庄并清手牌(修复: 上一局结算被重置)
+  if(!S.players.length){
+    const n=4;
+    S.players=makePlayers(n,S.ante);
+  }else{
+    S.bankerSeq++;
+    S.players.forEach(p=>{ p.banker=false; p.cards=[]; p.folded=false; p.inTurn=false; });
+    S.players[S.bankerSeq%S.players.length].banker=true;
+  }
   renderAll(); setBanner("选择底注开局");
   $("#overlay").classList.add("show");
   $("#panelbox").innerHTML=`<h3>第 ${S.round} 局 · 下注</h3>
@@ -469,7 +487,8 @@ async function startRound(){
   $("#panelbox").querySelectorAll(".betopt").forEach(b=>b.onclick=()=>{
     S.ante=+b.dataset.v;
     $("#panelbox").querySelectorAll(".betopt").forEach(x=>x.classList.toggle("sel",x===b));
-    S.players.forEach(p=>p.stake=S.ante);
+    // 下注不超余额(破产玩家按全部余额下注, 封顶赔付兜底)
+    S.players.forEach(p=>p.stake=Math.max(1,Math.min(S.ante,p.chips)));
   });
   $("#btn-go").onclick=()=>{ $("#overlay").classList.remove("show"); deal(); };
 }
@@ -526,7 +545,7 @@ function settle(){
   let rows=pairs.map(pr=>{
     if(!pr.w) return `<div class="srow"><span>${pr.p1.name} vs ${pr.p2.name}</span><span class="tie">平局</span></div>`;
     const W=pr.p1.id===pr.w?pr.p1:pr.p2, L=pr.w===pr.p1.id?pr.p1:pr.p2;
-    const amt=pr.p1.stake*pr.mult;
+    const amt=pr.paid||0;
     return `<div class="srow"><span>${W.name}(${tname[pr.winType]||pr.winType} ×${pr.mult}) 胜 ${L.name}</span><span class="win">±${fmt(amt)}</span></div>`;
   }).join("");
   $("#overlay").classList.add("show");
