@@ -94,6 +94,13 @@ html,body{height:100%;background:radial-gradient(ellipse at 50% 40%,#0d5c3e,#073
 /* 倒计时进度环(围着按钮/头像走一圈) */
 .ring{position:absolute;border-radius:50%;pointer-events:none}
 .ringwrap{position:relative;width:52px;height:52px;flex:none}
+.raisehand{position:absolute;right:-10px;bottom:-4px;font-size:17px;line-height:1;
+  filter:drop-shadow(0 2px 3px rgba(0,0,0,.7));animation:raisePop .3s ease-out;z-index:5}
+@keyframes raisePop{0%{transform:scale(0) rotate(-30deg)}100%{transform:scale(1) rotate(0)}}
+.raisebtn{margin-top:6px;height:34px;border-radius:11px;border:1px solid var(--line);
+  background:rgba(217,180,92,.12);color:#ffd97a;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit}
+.raisebtn.on{background:rgba(217,180,92,.34);border-color:var(--gold);color:#fff}
+.raisebtn:disabled{opacity:.4;cursor:default}
 .sebring{position:absolute;inset:-9px;pointer-events:none}
 .sebring svg{position:absolute;inset:0;width:100%;height:100%;transform:rotate(-90deg)}
 .sebring .bgc{stroke:rgba(255,255,255,.14)}
@@ -260,6 +267,7 @@ table.mx .diag{background:rgba(255,255,255,.02)}
       </div>
       <div id="handinfo"><div class="t1">—</div><div class="t2"></div></div>
     </div>
+    <button class="raisebtn" id="btn-raise">✋ 举手要补牌</button>
     <div id="hand"><div id="drawslot"><span style="font-size:20px">+</span>补牌位</div></div>
     <div id="actions">
       <button class="abtn" id="btn-stop" aria-label="过" disabled></button>
@@ -484,7 +492,7 @@ const RX=40, RY=42, CX=50, CY=47;   // 椭圆: 竖屏桌, 百分比
 
 const AI_NAMES=["老陈","阿玲","阿海","阿芳","阿坤","阿杰","阿宝","阿强","阿龙","丽姐","小敏"];
 const AI_FACE=["assets/avatars/avatar-m3.png","assets/avatars/avatar-f1.png","assets/avatars/avatar-m2.png","assets/avatars/avatar-f3.png","assets/avatars/avatar-f2.png","assets/avatars/avatar-m1.png","assets/avatars/avatar-f1.png","assets/avatars/avatar-m1.png","assets/avatars/avatar-m2.png","assets/avatars/avatar-f2.png","assets/avatars/avatar-f3.png"];
-const S={round:0,ante:200,pot:0,players:[],myIdx:0,phase:"idle",bankerSeq:0};
+const S={round:0,ante:200,pot:0,players:[],myIdx:0,phase:"idle",bankerSeq:0,raised:new Set()};
 
 const SPEED = new URLSearchParams(location.search).get("test")==="1" ? 0 : 1;
 const sleep=ms=>new Promise(r=>setTimeout(r, ms*SPEED));
@@ -522,6 +530,7 @@ function renderSeats(){
       <div class="avwrap">
         <div class="avatar" style="background-image:url('${p.face}')"></div>
         ${p.banker?'<div class="bankerbadge"></div>':""}
+        ${(typeof S!=="undefined"&&S.raised&&S.raised.has(p.id))?'<div class="raisehand" title="已举手要补牌">✋</div>':''}
         <div class="sebring" data-ring="${p.id}" style="display:none">
           <svg viewBox="0 0 52 52"><circle class="bgc" cx="26" cy="26" r="24" fill="none" stroke-width="3"/>
           <circle class="fgc" cx="26" cy="26" r="24" fill="none" stroke-width="3" stroke-dasharray="150.8" stroke-dashoffset="0"/></svg>
@@ -580,7 +589,7 @@ function renderTop(){
   $("#roominfo").textContent=`房号 882010 · 第 ${S.round} 局 · 底注 ${S.ante} · 池底 ${fmt(S.pot)}`;
   $("#pot").textContent=`池底 ${fmt(S.pot)}`;
 }
-function renderAll(){ renderSeats(); renderHand(); renderMe(); renderTop(); }
+function renderAll(){ renderSeats(); renderHand(); renderMe(); renderTop(); updateRaiseBtn(); }
 function setBanner(html){ $("#banner").innerHTML=`<b>${html}</b>`; }
 const RING_C=2*Math.PI*24;
 // 倒计时颜色: 绿(充裕) -> 黄(过半) -> 红(将超时)
@@ -704,10 +713,22 @@ async function startRound(){
   });
   $("#btn-go").onclick=()=>{ $("#overlay").classList.remove("show"); deal(); };
 }
+// 决策顺序: 沿桌沿顺时针(角度从 90° 起递减), 保证发牌/决策顺序与视觉一致
+function seatClockOrder(){
+  const opps=S.players.filter(p=>!p.me);
+  const angles=SEAT_ANGLES[opps.length]||[];
+  return opps.map((p,i)=>({p, ang:angles[i]!==undefined?angles[i]:(90-i*30)}))
+    .sort((a,b)=> a.ang===b.ang ? 0 : (a.ang-b.ang))
+    .map(x=>x.p);
+}
 function dealOrder(){
   const n=S.players.length, bi=S.players.findIndex(p=>p.banker);
   const order=[];
-  for(let r=0;r<PRESET.startCards;r++) for(let k=1;k<=n;k++) order.push(S.players[(bi+k)%n]);
+  // 从庄家下家开始, 按顺时针座位序
+  const clockwise=seatClockOrder();
+  const startIdx=Math.max(0,clockwise.findIndex(p=>p.banker));
+  const seq=clockwise.map((_,k)=>clockwise[(startIdx+k)%clockwise.length]);
+  for(let r=0;r<PRESET.startCards;r++) for(const p of seq) order.push(p);
   return order;
 }
 async function deal(){
@@ -733,23 +754,35 @@ async function deal(){
       await sleep(200);
     }
   }
+  S.phase="decision";
+  updateRaiseBtn(); renderSeats();
   decisionLoop(deck);
 }
 async function decisionLoop(deck){
   S.phase="decision";
-  for(const p of S.players){
+  // 决策顺序: 沿桌沿顺时针
+  const seq=seatClockOrder();
+  const order=[];
+  const me=S.players[S.myIdx];
+  const myTurnAt=seq.findIndex(p=>p.me);
+  // 我举手了 -> 我先补牌(展示举手的价值)
+  if(myTurnAt>=0 && S.raised.has(me.id)){
+    order.push(me, ...seq.filter((_,i)=>i!==myTurnAt));
+  }else{
+    order.push(...seq);
+  }
+  for(const p of order){
     if(p.cards.length>=PRESET.maxCards) continue;
     if(p.me){
       p.inTurn=true; S.phase="myturn"; renderSeats();
       const canDraw=p.cards.length<PRESET.maxCards;
-      renderHand();   // 进入我回合后重绘: 补牌位此时才显示
       setBanner(canDraw?"轮到你 · 过 或 补一张":"轮到你 · 过");
       $("#btn-stop").disabled=false; $("#btn-draw").disabled=!canDraw;
       $("#btn-draw").style.display=canDraw?"flex":"none";
+      renderHand();
       let done=false;
       let resolveTurn=null;
       const turnPromise=new Promise(r=>{ resolveTurn=r; });
-      // 补牌入口(补牌位 / 补一张按钮 共用)
       const doDraw=()=>{
         if(done||!canDraw) return;
         done=true; clearTimeout(ringTimer); stopRing();
@@ -779,7 +812,11 @@ async function decisionLoop(deck){
       stopRing();
       const r=classifyHand(p.cards);
       const good=["tianGong9","tianGong8","shuangGui","sanGui","zhenBaoZi","tongHuaShun","hunShun"].includes(r.type)||r.pts>=7;
-      if(!good&&p.cards.length<PRESET.maxCards&&Math.random()<0.8){
+      // AI 评估后可能举手(全桌可见), 举手的必定补牌
+      const wants = !good && p.cards.length<PRESET.maxCards && Math.random()<0.85;
+      if(wants && !S.raised.has(p.id)){ S.raised.add(p.id); renderSeats(); await sleep(400); }
+      const willDraw = S.raised.has(p.id);
+      if(willDraw && p.cards.length<PRESET.maxCards){
         p.cards.push(deck.pop());
         setBanner(`${p.name} 补了一张`); renderSeats(); await sleep(600);
       } else { setBanner(`${p.name} 过`); renderSeats(); await sleep(450); }
@@ -787,8 +824,12 @@ async function decisionLoop(deck){
     }
   }
   S.phase="decision";
+  // 本局结束: 清理举手状态
+  S.raised.clear();
+  renderSeats();
   reveal();
 }
+
 async function reveal(){
   S.phase="reveal";
   setBanner("统一摊牌");
@@ -945,6 +986,26 @@ window.__selfTest=selfTest;
 /* ---------- 启动 ---------- */
 window.addEventListener("error",e=>{ window.__err=String(e.message||e); });
 $("#specbtn").onclick=()=>$("#speclist").classList.toggle("show");
+// 举手 / 撤销举手(仅在轮到我之前可用)
+function updateRaiseBtn(){
+  const btn=$("#btn-raise"); if(!btn) return;
+  const me=S.players[S.myIdx];
+  const myTurn = S.phase==="myturn";
+  const canRaise = (S.phase==="decision"||S.phase==="dealing"||S.phase==="myturn") && me && me.cards.length<PRESET.maxCards;
+  btn.style.display = (S.phase==="myturn"||S.phase==="decision"||S.phase==="dealing") ? "block":"none";
+  btn.disabled = !canRaise;
+  const raised = S.raised.has(me.id);
+  btn.classList.toggle("on", raised);
+  btn.textContent = raised ? "✋ 已举手(点击撤销)" : "✋ 举手要补牌";
+  if(myTurn) btn.textContent = raised ? "✋ 已举手(轮到你只能补)" : "✋ 举手要补牌";
+}
+$("#btn-raise").onclick=()=>{
+  const me=S.players[S.myIdx]; if(!me) return;
+  if(S.phase==="myturn") return;                 // 轮到我时不能再撤销
+  if(S.raised.has(me.id)){ S.raised.delete(me.id); setBanner("已撤销举手"); }
+  else { S.raised.add(me.id); setBanner("已举手要补牌，全桌可见"); }
+  updateRaiseBtn(); renderSeats();
+};
 S.players=makePlayers(9,200); renderAll(); setBanner("点击「发牌」开始"); startRound();
 if(new URLSearchParams(location.search).get("test")==="1") autoTest();
 </script>
