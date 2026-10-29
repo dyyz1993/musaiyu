@@ -451,9 +451,10 @@ const sleep=ms=>new Promise(r=>setTimeout(r, ms*SPEED));
 const $=s=>document.querySelector(s);
 const fmt=n=>n.toLocaleString("en-US");
 function seatEl(id){ return document.querySelector(`.seat[data-pid="${id}"]`); }
+const SUIT_L={"♠":"S","♥":"H","♣":"C","♦":"D"};
 function cardFaceSrc(c){
   if(c.joker) return "assets/cards/"+(c.red?"J-1":"J-2")+".png";
-  return "assets/cards/"+c.suit+"-"+rankStr(c.rank)+".png";
+  return "assets/cards/"+(SUIT_L[c.suit]||c.suit)+"-"+rankStr(c.rank)+".png";
 }
 function renderSeats(){
   const arena=$("#arena"); arena.innerHTML="";
