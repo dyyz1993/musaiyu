@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>木虱鱼 · 全状态梳理与对局时序图</title>
+<style>
+:root{
+  --gold:#d9b45c; --gold-hi:#f2ce78; --felt:#0d3b2a; --felt-dark:#04150f;
+  --bg:#0a1712; --card:#0f241a; --line:rgba(217,180,92,.35);
+  --txt:#fff; --sub:#9fb8ac; --win:#7de3a8; --lose:#ff8f86; --warn:#ffd97a;
+  --srv:#e8a33d; --me:#4db8ff; --opp:#7de3a8; --bot:#c792ea;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--txt);font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+  padding:28px 20px 60px;line-height:1.55}
+.wrap{max-width:1060px;margin:0 auto}
+h1{font-size:24px;color:var(--gold-hi);margin-bottom:4px}
+h1 small{font-size:13px;color:var(--sub);font-weight:400;margin-left:10px}
+h2{font-size:17px;color:var(--gold-hi);margin:34px 0 12px;padding-left:10px;border-left:4px solid var(--gold)}
+h3{font-size:14px;color:var(--gold);margin:18px 0 8px}
+p,.p{font-size:13px;color:#cfe0d6;margin:6px 0}
+.sub{color:var(--sub);font-size:12px}
+b.w{color:var(--win)} b.l{color:var(--lose)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin:10px 0}
+.tag{display:inline-block;padding:1px 8px;border-radius:20px;font-size:11px;font-weight:700;margin-right:4px}
+.t-srv{background:rgba(232,163,61,.18);color:var(--srv)}
+.t-me{background:rgba(77,184,255,.16);color:var(--me)}
+.t-opp{background:rgba(125,227,168,.14);color:var(--opp)}
+.t-bot{background:rgba(199,146,234,.16);color:var(--bot)}
+.t-all{background:rgba(255,255,255,.1);color:#eee}
+
+/* 状态节点 */
+.node{display:inline-block;padding:6px 12px;border-radius:9px;font-size:12px;font-weight:700;
+  border:1.5px solid;margin:2px}
+.n-room{border-color:#5eb0ff;background:rgba(94,176,255,.08);color:#8ecbff}
+.n-round{border-color:var(--gold);background:rgba(217,180,92,.08);color:var(--gold-hi)}
+.n-hand{border-color:var(--opp);background:rgba(125,227,168,.07);color:var(--opp)}
+.n-dec{border-color:#e5a35d;background:rgba(229,163,93,.08);color:#f0c186}
+.n-bad{border-color:#e5544b;background:rgba(229,84,75,.08);color:#ff9d94}
+.arrow{color:var(--gold);font-size:15px;margin:0 2px}
+.nodeflow{line-height:2.4}
+
+/* 泳道时序 */
+.seq{border:1px solid var(--line);border-radius:14px;overflow:hidden;margin:12px 0}
+.seq-head{display:grid;grid-template-columns:56px 1fr 1fr 1fr 1fr;background:#132a1e;
+  border-bottom:1px solid var(--line);font-size:12px;font-weight:800;text-align:center}
+.seq-head>div{padding:8px 4px;border-right:1px solid rgba(217,180,92,.2)}
+.seq-head .lane-srv{color:var(--srv)}.seq-head .lane-me{color:var(--me)}
+.seq-head .lane-opp{color:var(--opp)}.seq-head .lane-bot{color:var(--bot)}
+.msg{display:grid;grid-template-columns:56px 1fr;grid-column:1/-1;border-bottom:1px dashed rgba(217,180,92,.14);
+  font-size:12.5px}
+.msg:nth-child(even){background:rgba(255,255,255,.02)}
+.msg .no{padding:8px 0 8px 10px;color:var(--sub);font-weight:800;font-variant-numeric:tabular-nums}
+.msg .body{padding:7px 10px 7px 0}
+.msg .route{font-weight:700;margin-right:6px;white-space:nowrap}
+.msg .act{color:#e8f3ec}
+.msg .data{color:var(--sub);font-size:11.5px;margin-top:1px}
+.msg .st{display:inline-block;margin-top:3px;padding:0 7px;border-radius:10px;font-size:10.5px;font-weight:700;
+  background:rgba(217,180,92,.14);color:var(--gold-hi)}
+.phase-band{grid-column:1/-1;background:linear-gradient(90deg,rgba(217,180,92,.22),rgba(217,180,92,.06));
+  padding:5px 12px;font-weight:800;color:var(--gold-hi);font-size:12.5px;letter-spacing:1px;
+  border-top:1.5px solid var(--gold);border-bottom:1px solid rgba(217,180,92,.3)}
+
+/* 表格 */
+table{width:100%;border-collapse:collapse;font-size:12.5px;margin:8px 0}
+th,td{padding:6px 9px;text-align:left;border-bottom:1px solid rgba(255,255,255,.08);vertical-align:top}
+th{color:var(--gold-hi);font-size:12px;background:rgba(217,180,92,.07)}
+tr:hover td{background:rgba(255,255,255,.025)}
+code{background:rgba(255,255,255,.08);padding:1px 6px;border-radius:4px;font-size:11.5px;color:#ffe6a0}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media(max-width:760px){.grid2{grid-template-columns:1fr}}
+.num{font-size:30px;font-weight:900;color:var(--gold-hi)}
+.statcards{display:flex;gap:12px;flex-wrap:wrap;margin:10px 0}
+.scard{flex:1;min-width:150px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.scard .lbl{font-size:11px;color:var(--sub)}
+.warnbox{border:1px solid rgba(229,84,75,.5);background:rgba(229,84,75,.07);border-radius:12px;padding:12px 16px;margin:10px 0}
+.warnbox b{color:#ff9d94}
+.okbox{border:1px solid rgba(125,227,168,.4);background:rgba(125,227,168,.06);border-radius:12px;padding:12px 16px;margin:10px 0}
+.okbox b{color:var(--win)}
+ul{padding-left:20px;margin:6px 0}
+li{font-size:13px;color:#cfe0d6;margin:3px 0}
+.pill{display:inline-block;padding:0 7px;border-radius:9px;font-size:10.5px;font-weight:700}
+.p0{background:#e5544b22;color:#ff9d94}.p1{background:#f2ce7822;color:#f2ce78}.p2{background:#7de3a822;color:#7de3a8}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>木虱鱼 · 全状态梳理 + 对局时序图 <small>v2.10 基线 · 2026-10-30</small></h1>
+<p class="sub">规则冻结：duobi-v1（起手 2 张 · 可补 1 张 = 最多 3 张 · 单鬼强制补 · 顺时针行动 · 庄家最后）</p>
+
+<!-- ============ 状态数量统计 ============ -->
+<h2>〇、状态总数</h2>
+<div class="statcards">
+  <div class="scard"><div class="num">4</div><div class="lbl">房间级状态</div></div>
+  <div class="scard"><div class="num">10</div><div class="lbl">局级状态（一个完整对局）</div></div>
+  <div class="scard"><div class="num">4</div><div class="lbl">玩家手牌状态</div></div>
+  <div class="scard"><div class="num">3</div><div class="lbl">决策动作</div></div>
+  <div class="scard"><div class="num">6</div><div class="lbl">异常/边界分支</div></div>
+</div>
+
+<!-- ============ 一、房间级 ============ -->
+<h2>一、房间级状态（4 种）</h2>
+<div class="card nodeflow">
+  <span class="node n-room">OPEN · 等人</span><span class="arrow">⟶</span>
+  <span class="node n-room">READY · 可开局</span><span class="arrow">⟶</span>
+  <span class="node n-round">IN_ROUND · 对局中</span><span class="arrow">⟶</span>
+  <span class="node n-bad">CLOSED · 解散</span>
+</div>
+<table>
+  <tr><th>状态</th><th>进入条件</th><th>期间</th><th>退出</th></tr>
+  <tr><td><b>OPEN</b></td><td>房主建房，设底注档位(50/100/200/1000)与人数(2~12)</td><td>真人入座；不足由<b>机器人自动补位</b>（服务端 bot 模块）</td><td>房主点开局</td></tr>
+  <tr><td><b>READY</b></td><td>达到开局人数</td><td>发局间倒计时</td><td>倒计时结束 → 首局</td></tr>
+  <tr><td><b>IN_ROUND</b></td><td>开局</td><td>循环执行下面的 10 个局级状态</td><td>房主解散 / 全员退出</td></tr>
+  <tr><td><b>CLOSED</b></td><td>解散</td><td>—</td><td>终态</td></tr>
+</table>
+
+<!-- ============ 二、局级状态 ============ -->
+<h2>二、局级状态（10 种 · 一个完整对局）</h2>
+<div class="card nodeflow">
+  <span class="node n-round">F0 参加确认</span><span class="arrow">⟶</span>
+  <span class="node n-round">F1 洗牌</span><span class="arrow">⟶</span>
+  <span class="node n-round">F2 发牌(逐张)</span><span class="arrow">⟶</span>
+  <span class="node n-dec">F3 决策轮</span><span class="arrow">⟶</span>
+  <span class="node n-round">F4 摊牌</span><span class="arrow">⟶</span>
+  <span class="node n-round">F5 比较</span><span class="arrow">⟶</span>
+  <span class="node n-round">F6 结算面板</span><span class="arrow">⟶</span>
+  <span class="node n-round">F7 下一局倒计时</span>
+</div>
+<table>
+  <tr><th>#</th><th>状态</th><th>触发</th><th>服务端动作</th><th>玩家动作</th><th>超时</th><th>下一状态</th></tr>
+  <tr><td>F0</td><td><b>参加确认</b></td><td>上局结算面板点「下一局」</td><td>发确认请求(默认参加)</td><td>5s 内点「不参加」= 本局旁观；<b>不点 = 自动参加</b></td><td>5s 自动参加</td><td>全员确认 → F1</td></tr>
+  <tr><td>F1</td><td><b>洗牌</b></td><td>参加者锁定(≥2)</td><td>洗 55 张牌堆(52+3 鬼)，广播「牌堆就绪」</td><td>无</td><td>—</td><td>F2</td></tr>
+  <tr><td>F2</td><td><b>发牌</b></td><td>洗牌完成</td><td>按顺时针逐张发，每人 <b>2 张</b>（每张一条消息，前端播飞牌动画）</td><td>看自己的 2 张</td><td>—</td><td>F3</td></tr>
+  <tr><td>F3</td><td><b>单鬼强制补</b></td><td>起手恰好 1 鬼</td><td><b>自动</b>补第 3 张，全桌播报「XX 单鬼 · 强制补牌」</td><td>无（规则强制，不由玩家决定）</td><td>—</td><td>F4</td></tr>
+  <tr><td>F4</td><td><b>决策轮</b></td><td>发牌完</td><td>按顺时针逐个询问（庄家下一家先，庄家最后），每问开启 <b>15s 倒计时环（绿→黄→红）</b></td><td colspan="2"><b>过</b>(保持 2 张) / <b>补一张</b>(第 3 张) / <b>举手示意</b>(未轮到时提前表示要补，可撤销) / <b>大牌自动亮牌</b>(天公9/8、双鬼、三鬼、豹子、同花顺全桌可见) / <b>超时自动过</b></td><td>全员决策完 → F5</td></tr>
+  <tr><td>F5</td><td><b>统一摊牌</b></td><td>全员决策完</td><td>广播摊牌指令</td><td>前端<b>逐个 3D 翻牌</b>+报牌型</td><td>—</td><td>F6</td></tr>
+  <tr><td>F6</td><td><b>两两比较</b></td><td>摊牌完</td><td>两两 compareHands（封顶赔付 delta=min(底注×倍率, 输家余额)，零和）</td><td>无</td><td>—</td><td>F7</td></tr>
+  <tr><td>F7</td><td><b>结算面板</b></td><td>比较完</td><td>下发三视图数据（排行/我的对局/对阵表）</td><td>查看，点「下一局」</td><td>—</td><td>F8</td></tr>
+  <tr><td>F8</td><td><b>下一局倒计时</b></td><td>结算查看完</td><td>广播倒计时(8s)，<b>默认继续参加</b></td><td>点「不参加」= 本局旁观</td><td>8s 自动继续</td><td>≥2 人参加 → 下一局 F1；否则 → 等人</td></tr>
+</table>
+
+<!-- ============ 三、玩家级 ============ -->
+<h2>三、玩家手牌状态（4 种）与决策动作（3 种）</h2>
+<div class="grid2">
+<div class="card">
+<h3>手牌张数</h3>
+<div class="nodeflow">
+  <span class="node n-hand">0 张</span><span class="arrow">⟶</span>
+  <span class="node n-hand">2 张(起手)</span><span class="arrow">⟶</span>
+  <span class="node n-hand">3 张(补/强制)</span>
+</div>
+<p class="sub">你说的「默认发三张」= 每人最终 3 张 ✓（2 张起手 + 补 1 张达成）；「补不补由我自己」= 没有单鬼时补不补由玩家点按钮决定 ✓——两条都成立，规则不用改。</p>
+</div>
+<div class="card">
+<h3>决策子状态（我回合 15s 内）</h3>
+<div class="nodeflow">
+  <span class="node n-dec">等待</span><span class="arrow">⟶</span>
+  <span class="node n-dec">已举手(示意)</span><span class="arrow">⟶</span>
+  <span class="node n-dec">已过 / 已补</span>
+</div>
+<p class="sub">举手 = 未轮到时提前示意要补（全桌可见 ✋，可撤销）；轮到我时若已举手 → <b>自动补牌</b>不用再点。大牌（天公9/8 等）自动亮牌全桌可见。</p>
+</div>
+</div>
+
+<!-- ============ 四、完整时序图 ============ -->
+<h2>四、单局完整时序图（泳道）</h2>
+<p class="sub">泳道：🟠 服务端(权威) ｜ 🔵 玩家-我 ｜ 🟢 对手(真人/机器人) ｜ 🟣 机器人(服务端驱动)。时间从上往下。</p>
+<div class="seq">
+  <div class="seq-head"><div>#</div><div>🟠 服务端</div><div>🔵 我</div><div>🟢 对手(真人)</div><div>🟣 机器人</div></div>
+
+  <div class="phase-band">阶段一 · 房间与入座（只发生一次）</div>
+  <div class="msg"><div class="no">01</div><div class="body">
+    <span class="route"><span class="tag t-srv">服务端</span>⟶<span class="tag t-all">全员</span></span>
+    <span class="act">建房成功，广播房间配置</span>
+    <div class="data">底注档位[50/100/200/1000] · 人数上限 · 机器人数量 · duobi-v1 规则</div>
+    <span class="st">房间 OPEN</span></div></div>
+  <div class="msg"><div class="no">02</div><div class="body">
+    <span class="route"><span class="tag t-opp">对手</span>⟶<span class="tag t-srv">服务端</span></span>
+    <span class="act">入座请求 → 分配座位(顺时针空位)</span>
+    <div class="data">满员后 bot 自动补位；全员就绪 → READY</div>
+    <span class="st">房间 READY</span></div></div>
+
+  <div class="phase-band">阶段二 · 单局开始</div>
+  <div class="msg"><div class="no">03</div><div class="body">
+    <span class="route"><span class="tag t-srv">服务端</span>⟶<span class="tag t-all">全员</span></span>
+    <span class="act">F0 参加确认(5s 倒计时，默认参加)</span>
+    <div class="data">不点 = 自动参加；点「不参加」= 本局旁观(能看到暗牌吗？不能，旁观全暗)</div>
+    <span class="st">F0 → F1</span></div></div>
+  <div class="msg"><div class="no">04</div><div class="body">
+    <span class="route"><span class="tag t-srv">服务端</span>(内部)</span>
+    <span class="act">F1 洗牌 55 张(52+3鬼)，任何人不可见</span>
+    <span class="st">F1 → F2</span></div></div>
+
+  <div class="phase-band">阶段三 · 发牌（一张一张，顺时针，庄家下一家先）</div>
+  <div class="msg"><div class="no">05</div><div class="body">
+    <span class="route"><span class="tag t-srv">服务端</span>⟶<span class="tag t-opp">对手</span>⟶<span class="tag t-me">我</span>⟶<span class="tag t-bot">机器人</span></span>
+    <span class="act">逐张发牌(共 2 轮)，前端播飞牌动画；牌面只有自己可见</span>
+    <div class="data">每人 2 张；顺序 = 庄家下一家 → … → 庄家</div>
+    <span class="st">F2 → F3</span></div></div>
+  <div class="msg"><div class="no">06</div><div class="body">
+    <span class="route"><span class="tag t-srv">服务端</span>(自动)</span>
+    <span class="act">F3 单鬼强制补：服务端检测某玩家起手恰好 1 鬼 → 自动发第 3 张，全桌播报</span>
+    <div class="data">SPEC 判定 case #10：不由玩家决定</div>
+    <span class="st">F3 → F4</span></div></div>
+
+  <div class="phase-band">阶段四 · 决策轮（顺时针逐个，15s 倒计时环 绿→黄→红）</div>
+  <div class="msg"><div class="no">07</div><div class="body">
+    <span class="route"><span class="tag t-srv">服务端</span>⟶<span class="tag t-opp">对手</span></span>
+    <span class="act">询问决策 → 对手评估：<b>过</b> / <b>补一张</b>；大牌(天公9/8 等)自动亮牌</span>
+    <div class="data">超时 5s 自动过；倒计时环显示在其头像上</div></div></div>
+  <div class="msg"><div class="no">08</div><div class="body">
+    <span class="route"><span class="tag t-me">我</span>⟷<span class="tag t-srv">服务端</span></span>
+    <span class="act">我的回合(15s 环在我头像)：点「过」/ 点「补一张」/ 点「提前举手」</span>
+    <div class="data">举手 = 未轮到时提前示意(全桌可见 ✋，可撤销)；轮到我时已举手 → 自动补牌</div></div></div>
+  <div class="msg"><div class="no">09</div><div class="body">
+    <span class="route"><span class="tag t-bot">机器人</span>(服务端驱动)</span>
+    <span class="act">AI 评估 → 过 / 补一张 / 举手；环挂机器人头像</span>
+    <div class="data">服务端 bot 模块决策，与真人同一套接口</div></div></div>
+
+  <div class="phase-band">阶段五 · 摊牌与结算</div>
+  <div class="msg"><div class="no">11</div><div class="body">
+    <span class="route"><span class="tag t-srv">服务端</span>⟶<span class="tag t-all">全员</span></span>
+    <span class="act">F5 统一摊牌：广播全部手牌</span>
+    <div class="data">前端逐个 3D 翻牌 + 报牌型（天公9、双鬼…）</div>
+    <span class="st">F5 → F6</span></div></div>
+  <div class="msg"><div class="no">12</div><div class="body">
+    <span class="route"><span class="tag t-srv">服务端</span>(内部)</span>
+    <span class="act">F6 两两比较：compareHands × C(n,2) 对，封顶赔付</span>
+    <div class="data">delta=min(底注×倍率, 输家余额)，零和守恒</div>
+    <span class="st">F6 → F7</span></div></div>
+  <div class="msg"><div class="no">13</div><div class="body">
+    <span class="route"><span class="tag t-srv">服务端</span>⟶<span class="tag t-all">全员</span></span>
+    <span class="act">F7 结算面板(三视图：排行/我的对局/对阵表)</span>
+    <div class="data">含每人牌面、每对金额、我净输赢</div></div></div>
+
+  <div class="phase-band">阶段六 · 局间</div>
+  <div class="msg"><div class="no">14</div><div class="body">
+    <span class="route"><span class="tag t-srv">服务端</span>⟶<span class="tag t-all">全员</span></span>
+    <span class="act">下一局倒计时(8s，默认继续参加)</span>
+    <div class="data">点「不参加」= 下局旁观；庄位 +1 顺移；≥2 人参加 → 回到 03</div>
+    <span class="st">F8 → F1</span></div></div>
+</div>
+
+<!-- ============ 五、异常分支 ============ -->
+<h2>五、异常 / 边界分支（6 条）</h2>
+<div class="card">
+<table>
+  <tr><th>#</th><th>场景</th><th>处理</th></tr>
+  <tr><td>E1</td><td><b>断线</b></td><td>30s 重连窗口；期间该玩家座位亮「重连中」；超时该玩家自动过（其余流程继续）</td></tr>
+  <tr><td>E2</td><td><b>决策超时</b></td><td>倒计时环红→闪→自动过（已实现）</td></tr>
+  <tr><td>E3</td><td><b>筹码不足</b></td><td>下注 = min(底注, 余额)；结算封顶赔付 delta=min(底注×倍率, 输家余额)，零和</td></tr>
+  <tr><td>E4</td><td><b>全员不参加下一局</b></td><td>房间回 OPEN 等人状态</td></tr>
+  <tr><td>E5</td><td><b>旁观者</b></td><td>可看公共信息(池底/亮牌/人数)，<b>永远看不到暗牌</b></td></tr>
+  <tr><td>E6</td><td><b>牌堆耗尽</b></td><td>55 张 ÷ 12 人 × 3 = 36 张 ≤ 55 ✓ 数学上不会耗尽</td></tr>
+</table>
+</div>
+
+<!-- ============ 六、底注与参加机制（你的三个问题） ============ -->
+<h2>六、你问的三个设计点</h2>
+<div class="okbox">
+<b>① 底注是房间级配置，不是每轮重选</b><br>
+<span class="sub">建房时房主从预设档位选一个（50 / 100 / 200 / 1000），整场固定。每局开始不再弹下注面板——参加确认时自动按房间底注扣。</span>
+</div>
+<div class="okbox">
+<b>② 每局结束后：参加/不参加倒计时，默认参加</b><br>
+<span class="sub">结算面板点「下一局」→ 8 秒倒计时，期间可点「本局不参加」（该局旁观，看得见公共信息但不下注不比牌）；不点 = 自动继续。下一局开始前可再改主意参加。</span>
+</div>
+<div class="okbox">
+<b>③ 纯前端 → 需要服务端 + 机器人</b><br>
+<span class="sub">当前 musaiyu.pages.dev 是<b>纯前端单机版</b>：洗牌/发牌/比较全在浏览器里，AI 是本地模拟，刷新即丢局。要多人联机必须加<b>服务端权威</b>（洗牌/发牌/比较/结算全在服务端，客户端只显示+发操作），机器人也在服务端跑——具体两条路线见下节。</span>
+</div>
+
+<!-- ============ 七、状态与架构 ============ -->
+<h2>七、部署架构（两条路线）</h2>
+<div class="grid2">
+<div class="card">
+<h3>路线 A · Node + socket.io（部署 shanbox）</h3>
+<ul>
+  <li>服务端：Node + Express + socket.io，<b>supervisord 托管</b>（与 yxx 同机不同端口）</li>
+  <li>机器人：服务端 bot 模块，同一套决策接口</li>
+  <li>优点：与 SPEC 第 6 节一致；国内直连快（shanbox 域名）</li>
+  <li>缺点：需要自己运维</li>
+</ul>
+</div>
+<div class="card">
+<h3>路线 B · Cloudflare Workers + Durable Objects</h3>
+<ul>
+  <li>前端已在 musaiyu.pages.dev，WS 走同域最顺</li>
+  <li>优点：免运维、全球低延迟、与前端同账号</li>
+  <li>缺点：DO 有免费额度；国内访问 pages.dev 稳定性一般</li>
+</ul>
+</div>
+</div>
+<p class="sub">机器人：服务端 bot 模块（读牌型 → 简单策略：好牌补/差牌过 + 随机扰动），走与真人相同的决策接口，服务端不区分。</p>
+
+<!-- ============ 八、状态数核对 ============ -->
+<h2>八、状态数核对（你问"有多少种状态"）</h2>
+<div class="card">
+<table>
+  <tr><th>层</th><th>状态</th><th>数</th></tr>
+  <tr><td>房间级</td><td>OPEN / READY / IN_ROUND / CLOSED</td><td>4</td></tr>
+  <tr><td>局级</td><td>F0 参加确认 / F1 洗牌 / F2 发牌 / F3 单鬼强制补 / F4 决策轮 / F5 摊牌 / F6 比较 / F7 结算面板 / F8 下一局倒计时</td><td>9</td></tr>
+  <tr><td>玩家手牌</td><td>0 张 / 2 张 / 3 张</td><td>3</td></tr>
+  <tr><td>决策子态</td><td>等待 / 已举手 / 已过 / 已补（+超时自动过）</td><td>5</td></tr>
+  <tr><td>异常分支</td><td>断线重连 / 决策超时 / 筹码不足 / 全员退出 / 旁观 / 牌堆耗尽</td><td>6</td></tr>
+</table>
+<p class="sub">合计 <b>约 27 个状态/分支</b>，核心路径 = 房间 4 + 局级 9 = 13 个必须实现的状态。</p>
+</div>
+
+<p class="sub" style="margin-top:20px">基线：web/index.html v2.10（21/21 自测）· SPEC-竖屏与工程规格.md · 本图由代码实态梳理生成，规则冻结 duobi-v1</p>
+</div>
+</body>
+</html>
