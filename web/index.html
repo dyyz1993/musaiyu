@@ -167,6 +167,38 @@ table.mx tr.me td{box-shadow:inset 0 0 0 1px rgba(217,180,92,.35)}
 table.mx th.meh{background:rgba(217,180,92,.3);border-radius:4px}
 table.mx .diag{background:rgba(255,255,255,.02)}
 .mxtitle{text-align:center;font-size:11px;color:#9fb8ac;margin-top:2px}
+/* 视图切换 */
+.viewtabs{display:flex;gap:6px;margin:2px 0 10px}
+.vt{flex:1;height:30px;border-radius:9px;border:1px solid var(--line);background:transparent;
+  color:#ffd97a;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit}
+.vt.sel{background:rgba(217,180,92,.24);border-color:var(--gold);color:#fff}
+.vt:hover:not(.sel){background:rgba(217,180,92,.10)}
+/* 排行视图 */
+.lbrow{display:flex;align-items:center;gap:7px;padding:5px 4px;border-bottom:1px dashed rgba(255,255,255,.09)}
+.lbrow.me{background:rgba(217,180,92,.14);border-radius:8px;border-bottom-color:transparent}
+.lbrank{width:16px;text-align:center;font-size:11px;color:#8b9a94;font-weight:700}
+.lbrow.me .lbrank{color:var(--gold-hi)}
+.lbav{width:26px;height:26px;border-radius:50%;background-size:cover;background-position:center;flex:none}
+.lbname{font-size:11.5px;font-weight:600;width:34px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lbcards{display:flex;gap:1px;flex:none}
+.lbcards .hc{width:14px;height:19px;border-radius:2px;background:#fff;overflow:hidden;box-shadow:0 0 0 1px rgba(217,180,92,.6)}
+.lbcards .hc img{width:100%;height:100%;display:block}
+.lbbar{flex:1;height:9px;border-radius:5px;background:rgba(255,255,255,.07);position:relative;overflow:hidden;min-width:20px}
+.lbfill{position:absolute;top:0;bottom:0;border-radius:5px}
+.lbamt{width:62px;text-align:right;font-size:12px;font-weight:800;font-variant-numeric:tabular-nums}
+.lbamt.pos{color:#7de3a8}.lbamt.neg{color:#ff8f86}
+/* 我的对局视图 */
+.mmrow{display:flex;align-items:center;gap:8px;padding:7px 4px;border-bottom:1px dashed rgba(255,255,255,.09)}
+.mmside{display:flex;flex-direction:column;align-items:center;gap:2px;flex:none}
+.mmside .mmcards{display:flex;gap:1px}
+.mmside .mmcards .hc{width:17px;height:24px;border-radius:2px;background:#fff;overflow:hidden;box-shadow:0 0 0 1px rgba(217,180,92,.65)}
+.mmside .mmcards .hc img{width:100%;height:100%;display:block}
+.mmwho{font-size:10px;color:#9fb8ac}
+.mmvs{font-size:11px;color:#7d8c86;font-weight:700;flex:none}
+.mmres{flex:none;text-align:right;min-width:64px}
+.mmres .amt{font-size:14px;font-weight:800;font-variant-numeric:tabular-nums}
+.mmres .amt.pos{color:#7de3a8}.mmres .amt.neg{color:#ff8f86}.mmres .amt.tie{color:#9fb8ac}
+.mmres .ht{font-size:9.5px;color:#ffd97a;margin-top:1px}
 .panel .ok{margin-top:14px;width:100%;height:44px;border-radius:14px;border:none;
   background:linear-gradient(180deg,#f7d67a,var(--btn-draw));color:#3d2c05;font-weight:800;font-size:15px;cursor:pointer}
 .betrow{display:flex;gap:10px;margin:12px 0}
@@ -703,9 +735,8 @@ function settle(){
   floaty((net>=0?"+":"")+fmt(net), net>=0?"plus":"minus");
   setBanner(`本局结算 · 我 ${net>=0?"+":""}${fmt(net)}`);
 
-  // 对阵矩阵: 行=我, 列=对手, 格子=该对的输赢
+  // 对阵数据: Map "i_j" -> 金额(行视角), "i_j" -> 牌型
   const ps=S.players, n=ps.length;
-  // 用 Map 存 "i,j" -> 金额, 彻底避开数组下标语义坑
   const cell=new Map(), wtype=new Map();
   const key=(a,b)=>a+"_"+b;
   for(const pr of pairs){
@@ -713,36 +744,92 @@ function settle(){
     if(!pr.w){ cell.set(key(i,j),0); cell.set(key(j,i),0); wtype.set(key(i,j),"tie"); continue; }
     const wi=ps.findIndex(p=>p.id===pr.w);
     const amt=pr.paid||0;
-    const loser = (pr.p1.id===pr.w)? j : i;
-    const winner= (pr.p1.id===pr.w)? i : j;
+    const loser=(pr.p1.id===pr.w)? j : i, winner=(pr.p1.id===pr.w)? i : j;
     cell.set(key(winner,loser), amt);
     cell.set(key(loser,winner), -amt);
     wtype.set(key(winner,loser), pr.winType);
   }
+  const TN={tianGong9:"天公9",tianGong8:"天公8",shuangGui:"双鬼",sanGui:"三鬼",zhenBaoZi:"豹子",
+    tongHuaShun:"同花顺",jiaBaoZi:"假豹子",hunShun:"顺子",muShi:"木虱",normal:"普通"};
   const mini=c=>`<span class="hc"><img src="${cardFaceSrc(c)}"></span>`;
-  const head=ps.map(p=>{ const net=ledger[p.id]||0;
-      return `<th class="${p.me?"meh":""}"><div class="hname">${p.name}</div>
-      <div class="hcards">${(p.cards||[]).map(mini).join("")}</div>
-      <div class="hsub ${net>=0?"pos":"neg"}">${net>=0?"+":""}${fmt(net)}</div></th>`;}).join("");
+  const cardsOf=p=>(p.cards||[]).map(mini).join("");
+
+  /* ---- 视图1: 排行(按净额, 我高亮) ---- */
+  const maxAbs=Math.max(1,...ps.map(p=>Math.abs(ledger[p.id]||0)));
+  const rank=ps.slice().sort((a,b)=>(ledger[b.id]||0)-(ledger[a.id]||0));
+  const viewRank=rank.map((p,i)=>{
+    const v=ledger[p.id]||0, w=Math.abs(v)/maxAbs*100;
+    return `<div class="lbrow ${p.me?"me":""}">
+      <span class="lbrank">${i+1}</span>
+      <span class="lbav" style="background-image:url('${p.face}')"></span>
+      <span class="lbname">${p.name}</span>
+      <span class="lbcards">${cardsOf(p)}</span>
+      <span class="lbbar"><span class="lbfill" style="width:${w}%;${v>=0?"left:0;background:rgba(39,174,96,.55)":"right:0;background:rgba(192,57,43,.5)"}"></span></span>
+      <span class="lbamt ${v>=0?"pos":"neg"}">${v>=0?"+":""}${fmt(v)}</span></div>`;
+  }).join("");
+
+  /* ---- 视图2: 我的对局(只看我跟每个人的那对) ---- */
+  const myPairs=ps.map((q,j)=>({q,j})).filter(o=>o.j!==S.myIdx).map(({q,j})=>{
+    const v=cell.get(key(S.myIdx,j))||0;
+    const wt=(v>0)? wtype.get(key(S.myIdx,j)) : (v<0? wtype.get(key(j,S.myIdx)) : "tie");
+    const winCards = v>0? me.cards : q.cards;
+    const res=v>0? "胜" : v<0? "负" : "平";
+    return `<div class="mmrow">
+      <div class="mmside">
+        <div class="mmcards">${cardsOf(q)}</div>
+        <span class="mmwho">${q.name}</span>
+      </div>
+      <span class="mmvs">VS</span>
+      <div class="mmside">
+        <div class="mmcards">${cardsOf(me)}</div>
+        <span class="mmwho">我</span>
+      </div>
+      <div class="mmres">
+        <div class="amt ${v>0?"pos":v<0?"neg":"tie"}">${v>0?"+":""}${fmt(v)}</div>
+        <div class="ht">${res} ${TN[wt]||wt}</div>
+      </div>
+    </div>`;
+  }).join("");
+
+  /* ---- 视图3: 对阵表(上三角, 每对一次) ---- */
+  const head=ps.map(p=>{ const nv=ledger[p.id]||0;
+    return `<th class="${p.me?"meh":""}"><div class="hname">${p.name}</div>
+    <div class="hcards">${cardsOf(p)}</div>
+    <div class="hsub ${nv>=0?"pos":"neg"}">${nv>=0?"+":""}${fmt(nv)}</div></th>`;}).join("");
   const body=ps.map((p,i)=>{
     const cells=ps.map((q,j)=>{
-      if(i===j) return `<td class="diag"></td>`;
-      if(j<i) return `<td class="diag"></td>`;      // 下三角留空: 每对只显示一次
+      if(i===j||j<i) return `<td class="diag"></td>`;
       const v=cell.get(key(i,j))||0;
       if(v===0) return `<td class="tie">平</td>`;
       const wt=wtype.get(key(i,j))||"";
-      return `<td class="${v>0?"win":"lose"}" title="${wt}">${v>0?"+":""}${fmt(v)}</td>`;
+      return `<td class="${v>0?"win":"lose"}" title="${TN[wt]||wt}">${v>0?"+":""}${fmt(v)}</td>`;
     }).join("");
-    const cards=(p.cards||[]).map(mini).join("");
-    return `<tr class="${p.me?"me":""}"><th class="rowh"><div class="hname">${p.name}</div><div class="hcards">${cards}</div></th>${cells}</tr>`;
+    return `<tr class="${p.me?"me":""}"><th class="rowh"><div class="hname">${p.name}</div><div class="hcards">${cardsOf(p)}</div></th>${cells}</tr>`;
   }).join("");
 
+  const VIEWS={
+    rank:`<div class="lbhead"></div>${viewRank}`,
+    mine: myPairs,
+    matrix:`<div class="mxwrap"><table class="mx"><thead><tr><th></th>${head}</tr></thead><tbody>${body}</tbody></table></div>
+      <div class="mxtitle">上三角显示，每对只出现一次；点格子看牌型</div>`
+  };
   $("#overlay").classList.add("show");
-  $("#panelbox").innerHTML=`<h3>第 ${S.round} 局 · 对阵表</h3>
-    <div class="mxwrap"><table class="mx"><thead><tr><th></th>${head}</tr></thead><tbody>${body}</tbody></table></div>
-    <div class="mxtitle">行是我，列是对手；格子是这一对的输赢（金色行/列=我）</div>
+  $("#panelbox").innerHTML=`<h3>第 ${S.round} 局 · 结算</h3>
+    <div class="viewtabs">
+      <button class="vt sel" data-v="rank">排行</button>
+      <button class="vt" data-v="mine">我的对局</button>
+      <button class="vt" data-v="matrix">对阵表</button>
+    </div>
+    <div id="viewbox">${VIEWS.rank}</div>
     <div class="stotal"><span>我本局净输赢</span><span style="color:${net>=0?"#7de3a8":"#ff8f86"};font-size:20px">${net>=0?"+":""}${fmt(net)}</span></div>
     <button class="ok" id="btn-next">下一局</button>`;
+  const vb=$("#viewbox");
+  $("#panelbox").querySelectorAll(".vt").forEach(btn=>{
+    btn.onclick=()=>{
+      $("#panelbox").querySelectorAll(".vt").forEach(x=>x.classList.toggle("sel",x===btn));
+      vb.innerHTML=VIEWS[btn.dataset.v];
+    };
+  });
   $("#btn-next").onclick=()=>{ $("#overlay").classList.remove("show"); startRound(); };
 }
 
