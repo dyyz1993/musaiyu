@@ -1,0 +1,54 @@
+# Module: musaiyu-online
+# Version: 1
+# Status: verified (诊断手法) / 页面本身 FAIL
+
+socket_deep_diagnosis:
+  description: "页面卡'连接中'时的 socket.io 分层诊断法 (proxy 逐层排除)"
+  steps:
+    - action: eval
+      note: "查状态变量。变量名是 sock 不是 socket/socket.io，先从 inline script 里 grep 确认"
+      js: "JSON.stringify({connected:String(sock.connected),id:String(sock.id||'null'),transport:String(sock.io.engine.transport.name),readyState:String(sock.io.engine.readyState)})"
+    - action: eval
+      note: "原生 WS 下行探针 (7s 收帧): 收到 0{sid...}+40 = 代理下行正常"
+    - action: eval
+      note: "原生 WS 双向探针: 发 40 收 40 ack、发 2 收 3 pong = 双向帧正常"
+    - action: eval
+      note: "挂钩抓真凶: sock.on('connect_error',e=>...) + sock.io.engine.on('packet',p=>...) 收集 4s"
+      expected: "connect_error 的 message 直接给出根因 (本次: 'It seems you are trying to reach a Socket.IO server in v2.x with a v3.x client')"
+  tips:
+    - "engine readyState=open 但 sock.connected=false + id=null = 引擎层通、socket.io 握手层被拒"
+    - "xbrowser network --listen 捕获恒为空 (bug, 见 feedback)，别浪费时间重试，直接用 eval 探针"
+
+eval_quoting_workaround:
+  description: "链式 -e 里 eval 含嵌套引号会 SyntaxError: Invalid or unexpected token"
+  workaround: "把 JS 存 bash 变量 → base64 → xbrowser eval \"eval(atob('B64'))\""
+
+console_window_semantics:
+  description: "xbrowser console 命令只向前采集 duration 毫秒 (默认5000), 不含历史 buffer"
+  implication: "测加载期错误必须先发起 console --duration 再触发动作; network 命令同理"
+
+# ===== 2026-10-30 追加 (v2, 复验通过轮) =====
+
+console_capture_working_pattern:
+  description: "两页加载期 console 错误的可靠采法 (console 命令只向前采集, 不能抓加载期)"
+  steps:
+    - action: addinitscript --base64
+      note: "document-start 注入: 包装 console.error + window.onerror + unhandledrejection → window.__errs"
+    - action: goto <url>
+    - action: eval "JSON.stringify((window.__errs||[]).slice(0,10))"
+  expected: "加载期与运行期错误全捕获, 跨导航自动清零(每文档新数组)"
+
+loadtime_networkerror_noise:
+  description: "两页加载瞬间各有 6~9 条 unhandledrejection 'NetworkError: A network error occurred.'"
+  evidence: "fetch 全程 patch 后实测: 9 条全部发生于 document start 同一毫秒, 早于页面首个 fetch 6ms; 42 次 fetch 0 失败; 30s 稳态观察 0 新增"
+  conclusion: "非应用代码产生 (浏览器层: 扩展/预取噪音), 不计入 PASS/FAIL; 此前 dashboard '每4s JSON解析错误' 已随 API 修复消失"
+
+fetch_patch_pattern:
+  description: "定位 fetch 失败来源的通用手法"
+  js: "window.__ferr=[];const of=window.fetch;window.fetch=function(){const u=String(arguments[0]);const p=of.apply(this,arguments);p.then(null,function(e){window.__ferr.push({url:u,err:String(e)})});return p}"
+  note: "配合 addinitscript 在 document-start 注入才能抓加载期; 已验证可用"
+
+verdict_criteria_20261030:
+  online_pass: "#conn='已连接' && sock.connected=true && #roominfo 含'房号 lobby' && #reconnect 无 show"
+  online_fail_leftover: "#banner 静态初始值'连接中…'未清 (known_bugs/banner-stale-connecting), 严格按任务标准算 FAIL 项"
+  dashboard_pass: "五卡全数字(活跃房间≥3, 机器人≥15) && 房间列表有 bot_*/lobby 行 && /musaiyu/api/stats 200"

@@ -1,0 +1,51 @@
+# Module: musaiyu-online (木虱鱼联机版 online.html + dashboard.html)
+# Version: 2
+# Status: verified   # 2026-10-30 复验: socket 连接修复确认(已连接+websocket+joined渲染), dashboard API 路径修复确认(200)
+#                    # 残留 bug 见 known_bugs; 选择器全部冷验证通过
+# Last verified: 2026-10-30
+
+online_page:
+  url: "https://musaiyu.shanbox.19930810.xyz:8443/musaiyu/online.html"
+  conn_badge: "#conn"                # 文字: 已连接( class=ok ) / 连接中… / 断开
+  banner: "#banner b"                # 牌桌横幅文案; 静态初始值是"连接中…", 连接成功后不会自动清(见 known_bugs)
+  reconnect_overlay: "#reconnect"    # 断线时 class 含 show，正文出现"与服务器断开/正在重连…"
+  spec_button: "#specbtn"            # 围观 ×N
+  btn_stop: "#btn-stop"              # 过 (禁用态 disabled)
+  btn_draw: "#btn-draw"              # 补一张 (禁用态 disabled)
+  sound_button: "button.icobtn"      # 🔊
+  my_name: "#myname"                 # 底部我的昵称 (当前显示头像路径, 见 known_bugs)
+  my_chips: "#mychips"               # 我的筹码 (joined 后渲染, 如 12,400)
+  room_info: "#roominfo"             # "房号 lobby · 第 N 局 · 底注 200 · 池底 0" (joined 到达的标志)
+  # 全局 JS 变量: sock (socket.io Socket)。注意 S(客户端状态) 是 const 不挂 window, 页面外不可读
+  # 页面自动 join 房间 "lobby"(闸坡厅), 无房间列表 UI——大厅=自动进入的 lobby 房
+  # 页面文本关键断言: #conn="已连接"=正常; sock.io.opts.path 必须 = "/musaiyu/socket.io/"
+
+dashboard_page:
+  url: "https://musaiyu.shanbox.19930810.xyz:8443/musaiyu/dashboard.html"
+  # 无 id 的指标卡，用文本断言: 活跃房间/在线玩家/机器人/总局数/总流水 (正常显示数字, 故障时显示 "—")
+  # 房间列表表格表头: 房间|阶段|局数|在线|真人|机器人|底注|流水; 故障时 tbody "加载中…", 正常有 bot_xxx + lobby 行
+  # 2026-10-30 修复确认: API="/musaiyu" + fetch(API+"/api/stats") = /musaiyu/api/stats → 200 (双重 /api 已修)
+  # 刷新: setInterval 双注册(倒计时1s触发 + 5s定时), 实际约 2.5s 一次, 两次 fetch: stats + socket.io 探针
+
+server_endpoints:
+  socketio_client_path: "/musaiyu/socket.io/"   # v2 更新: 服务端 path 已迁到 /musaiyu/ 下(全局 /socket.io/ 被 yxx 劫持)
+  socketio_polling_handshake: "https://musaiyu.shanbox.19930810.xyz:8443/musaiyu/socket.io/?EIO=4&transport=polling"
+  socketio_ws: "wss://musaiyu.shanbox.19930810.xyz:8443/musaiyu/socket.io/?EIO=4&transport=websocket"
+  client_cdn: "https://cdn.socket.io/4.7.5/socket.io.min.js"   # 服务端 v4.8.4, 版本兼容 ✓
+  api_stats_ok: "/musaiyu/api/stats"        # 200, 返回 {totalRooms,totalOnline,totalBots,totalRounds,totalTurnover,rooms[]}
+
+known_bugs:
+  - id: banner-stale-connecting
+    where: online.html
+    symptom: "连接成功进入大厅后, 牌桌中央 #banner 仍显示静态初始值 '连接中…'"
+    root_cause: "setBanner 只在 round_start/forced_draw/decision_turn/player_action/reveal_all 里调用; joined/applyState/renderAll 均不更新 banner, 大厅空闲态(phase=idle)永远残留初始文案"
+    fix_hint: "joined 处理器或 applyState 里 phase==idle 时 setBanner('等待玩家加入…') 一类"
+  - id: myname-shows-face-path
+    where: online.html
+    symptom: "#myname 显示 'assets/avatars/avatar-m3.png' 而非 '阿洲'"
+    root_cause: "客户端 renderMe 用 me.name 渲染 → 服务端 state 里该玩家 name 字段值=头像路径 (join_room 收到 {name:'阿洲',face:'assets/...'}, 疑似服务端把 face 存进 name, 待服务端核实)"
+    fix_hint: "先 curl/服务端日志确认 state.players[0].name; 客户端 294 行 $("#myname").textContent=me.name 无误"
+  - id: favicon-404
+    where: both
+    symptom: "/favicon.ico 404"
+    severity: cosmetic

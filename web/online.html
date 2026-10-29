@@ -368,7 +368,7 @@ let sock=null;
 const st={count:0,raised:new Set()};
 
 function connect(){
-  const opts={transports:["websocket","polling"],reconnection:true,reconnectionDelay:1000,reconnectionDelayMax:8000};
+  const opts={path:"/musaiyu/socket.io/",transports:["websocket","polling"],reconnection:true,reconnectionDelay:1000,reconnectionDelayMax:8000};
   sock=SERVER_URL?io(SERVER_URL,opts):io(opts);
   sock.on("connect",()=>{
     $("#conn").textContent="已连接"; $("#conn").className="ok";
@@ -376,7 +376,10 @@ function connect(){
     sock.emit("join_room",{roomId:"lobby",name:"阿洲",face:"assets/avatars/avatar-m3.png"});
   });
   sock.on("disconnect",()=>{ $("#conn").textContent="断开"; $("#conn").className=""; $("#reconnect").classList.add("show"); });
-  sock.on("joined",d=>{ S.myPid=d.pid; S.roomId=d.roomId; applyState(d.state); });
+  sock.on("joined",d=>{ S.myPid=d.pid; S.roomId=d.roomId; applyState(d.state); setBanner(d.state.phase==="waiting"?"等待玩家加入…":"对局进行中"); });
+  sock.on("spectator",d=>{ S.myPid=null; S.roomId=d.roomId; applyState(d.state); setBanner("围观模式 · 本桌已满员"); });
+  sock.on("rejoined",d=>{ applyState(d.state); setBanner(d.state.phase==="waiting"?"等待玩家加入…":"已重新接入对局"); });
+  sock.on("room_created",d=>{ S.myPid=d.pid; S.roomId=d.roomId; applyState(d.state); setBanner("房间已创建 · 等待玩家加入…"); });
   sock.on("room_state",d=>applyState(d));
   sock.on("phase",d=>{ S.phase=d.phase; });
   sock.on("round_start",d=>{

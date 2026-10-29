@@ -12,7 +12,11 @@ const BOT_ROOM_COUNT = 3;
 
 const app = express();
 const httpServer = http.createServer(app);
-const io = new Server(httpServer, { cors: { origin: '*' } });
+const io = new Server(httpServer, {
+  // shanbox 反代把全局 /socket.io/ 劫持给 yxx(3090)，musaiyu 必须走专属路径避开
+  path: '/musaiyu/socket.io/',
+  cors: { origin: '*' },
+});
 // shanbox 反代按子域名整站转发，页面挂在 /musaiyu/ 子路径下；剥掉前缀让静态和 API 复用同一套路由
 app.use((req, res, next) => {
   if (req.url === '/musaiyu') req.url = '/';
@@ -282,7 +286,7 @@ io.on('connection', (sock) => {
     let room = rooms.get(roomId);
     if (!room) { room = new Room(roomId, { ante: 200, maxPlayers: 9 }); rooms.set(roomId, room); }
     if (room.phase === 'waiting' && !room.isFull()) {
-      const p = room.addPlayer(sock.id, name || '玩家', face);
+      const p = room.addPlayer(sock.id, 'p' + (room._pSeq = (room._pSeq || 0) + 1), name || '玩家', face);
       const target = Math.min(botCount || 0, room.maxPlayers - 1);
       if (target > 0) room.fillBots(room.players.length + target);
       sock.emit('joined', { pid: p.pid, roomId, state: publicState(room) });
@@ -300,7 +304,7 @@ io.on('connection', (sock) => {
     sock.join(roomId);
     const room = new Room(roomId, { ante, maxPlayers: maxPlayers || 9 });
     rooms.set(roomId, room);
-    const p = room.addPlayer(sock.id, name || '房主', face);
+    const p = room.addPlayer(sock.id, 'p' + (room._pSeq = (room._pSeq || 0) + 1), name || '房主', face);
     room.fillBots(botCount || 3);
     sock.emit('room_created', { roomId, pid: p.pid, state: publicState(room) });
     broadcast(room, 'room_state', publicState(room));
