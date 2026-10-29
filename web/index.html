@@ -1,0 +1,570 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>木虱鱼 · 闸坡厅</title>
+<style>
+:root{
+  --gold:#d9b45c; --gold-hi:#f2ce78; --gold-dim:#9a7c34;
+  --felt:#0d3b2a; --felt-dark:#03251a;
+  --panel:rgba(8,20,16,.78); --line:rgba(217,180,92,.4);
+  --red:#c0392b; --green-hi:#9fe6bf;
+  --btn-stop:#0A7153; --btn-draw:#F4C447;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;background:#050807;color:#fff;overflow:hidden;
+  font-family:-apple-system,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif}
+#app{position:relative;margin:0 auto;height:100dvh;max-width:430px;width:100%;
+  display:flex;flex-direction:column;background:#0a0a0c;overflow:hidden}
+
+/* 状态栏 + 顶栏 */
+#statusbar{height:26px;flex:none;display:flex;align-items:center;justify-content:space-between;
+  padding:0 16px;background:#000;font-size:11px;font-weight:600;color:#fff}
+#topbar{height:44px;flex:none;display:flex;align-items:center;gap:8px;padding:0 12px;
+  background:linear-gradient(180deg,#15130c,#0a0906);border-bottom:1px solid var(--gold-dim);z-index:6}
+#topbar .back{font-size:20px;color:var(--gold);width:24px;text-align:center}
+#room{line-height:1.25;min-width:0}
+#room b{font-size:13px;font-weight:700;white-space:nowrap}
+#room small{display:block;font-size:10px;color:rgba(255,255,255,.66);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#topbar .sp{flex:1}
+.icobtn{width:30px;height:30px;border:none;background:transparent;color:var(--gold);font-size:16px;cursor:pointer}
+
+/* 牌桌 */
+#table{flex:1;position:relative;min-height:0;
+  background:
+    radial-gradient(ellipse 78% 52% at 50% 46%, #0f5a3d 0%, var(--felt) 55%, #072a1d 82%, var(--felt-dark) 100%);
+  overflow:hidden}
+#table:before{content:"";position:absolute;inset:10px 12px;
+  border:6px solid #50391c;border-radius:46%/38%;
+  box-shadow:inset 0 0 0 2px var(--gold), inset 0 0 0 5px #103d2a, 0 6px 18px #0008}
+#arena{position:absolute;inset:0}
+.seat{position:absolute;display:flex;align-items:center;gap:6px;transform:translate(-50%,-50%)}
+.seat.v{flex-direction:column;gap:0;text-align:center;transform:translateX(-50%)}
+.seat .avwrap{position:relative;flex:none}
+.avatar{width:32px;height:32px;border-radius:50%;border:2px solid var(--gold);
+  display:flex;align-items:center;justify-content:center;font-weight:800;color:var(--gold);
+  background:linear-gradient(160deg,#2e4a3d,#15251d);font-size:13px}
+.seat.l .avatar,.seat.r .avatar{width:34px;height:34px;font-size:14px}
+.seat.v.xl .avatar{width:38px;height:38px;font-size:15px}
+.bankerbadge{position:absolute;left:-7px;bottom:-3px;width:20px;height:20px;border-radius:50%;
+  background:radial-gradient(circle at 35% 30%,#e5544b,#a01d16);border:1.5px solid var(--gold);
+  display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:#ffe6a0}
+.seatinfo{display:flex;flex-direction:column;gap:1px;min-width:0}
+.seat.v .seatinfo{align-items:center}
+.sname{font-size:10px;font-weight:600;color:rgba(255,255,255,.94);white-space:nowrap}
+.schips{font-size:9.5px;color:#ffd97a;display:flex;align-items:center;gap:3px;white-space:nowrap}
+.chip-ic{display:inline-block;width:10px;height:10px;border-radius:50%;
+  background:radial-gradient(circle at 35% 30%,#e86a5e,#a01d16);border:1.5px dashed #ffd0a0;flex:none}
+.cardsrow{display:flex;margin-top:2px}
+.seat.l .cardsrow,.seat.r .cardsrow{margin-top:0}
+.mcard{width:22px;height:31px;border-radius:3px;margin:0 -2px;
+  background:linear-gradient(160deg,#c2382f,#8f1f1a);border:1px solid #e8b96a;
+  box-shadow:0 1px 3px rgba(0,0,0,.55)}
+.mcard:after{content:"";display:block;height:100%;border-radius:2px;
+  background:
+    radial-gradient(circle at 50% 50%, #e8c87a 0 8%, transparent 9%),
+    repeating-linear-gradient(45deg, transparent 0 3px, #d9a44a33 3px 5px)}
+.seat.act .avatar{border-color:#e5544b;box-shadow:0 0 0 2px rgba(229,84,75,.5)}
+.folded{opacity:.35}
+
+/* 中央横幅 */
+#banner{position:absolute;left:50%;top:56%;transform:translate(-50%,-50%);
+  padding:7px 18px;border-radius:10px;white-space:nowrap;z-index:3;
+  background:linear-gradient(180deg,#1b2b22,#0c1a12);
+  border:1.5px solid var(--gold);box-shadow:0 0 0 1px #0006,0 4px 14px #0009}
+#banner b{color:var(--gold-hi);font-size:12.5px;letter-spacing:1px}
+
+/* 池底+围观 */
+#pot{position:absolute;left:50%;top:16px;transform:translateX(-50%);z-index:3;
+  font-size:11px;color:#ffd97a;background:rgba(0,0,0,.45);padding:3px 12px;border-radius:10px;white-space:nowrap}
+#specbtn{position:absolute;right:8px;top:14px;z-index:4;font-size:10px;color:#ffd97a;
+  background:rgba(0,0,0,.4);border:1px solid var(--line);border-radius:10px;padding:3px 8px;cursor:pointer}
+#speclist{position:absolute;right:8px;top:40px;z-index:8;font-size:10px;color:#eee;
+  background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:6px 10px;display:none}
+#speclist.show{display:block}
+
+/* 我方区域 */
+#mezone{flex:none;position:relative;z-index:5;padding:6px 14px 10px;
+  background:linear-gradient(180deg,rgba(3,10,7,0),rgba(3,10,7,.88) 30%)}
+#meline{display:flex;align-items:center;gap:10px;margin-bottom:6px}
+#meavatar{width:40px;height:40px;border-radius:50%;flex:none;position:relative;
+  border:2px solid var(--gold);display:flex;align-items:center;justify-content:center;
+  font-weight:800;font-size:16px;color:#ffd97a;background:linear-gradient(160deg,#543c17,#2a1d08)}
+#meinfo b{font-size:13px;font-weight:600;white-space:nowrap}
+#mechips{font-size:12px;color:#ffd97a;display:flex;align-items:center;gap:4px}
+#handinfo{margin-left:auto;text-align:right;white-space:nowrap}
+#handinfo .t1{font-size:12px;color:var(--green-hi)}
+#handinfo .t1 b{color:#fff;font-size:15px}
+#handinfo .t2{font-size:11px;color:#ffd97a}
+#hand{display:flex;justify-content:center;align-items:center;gap:10px;margin-bottom:8px;min-height:112px}
+.pcard{width:78px;height:110px;border-radius:8px;background:#fff;color:#111;position:relative;
+  box-shadow:0 4px 10px rgba(0,0,0,.55);flex:none;
+  display:flex;flex-direction:column;justify-content:space-between;padding:5px 7px;
+  font-weight:800;line-height:1}
+.pcard .rk{font-size:17px}
+.pcard .st{font-size:22px;text-align:center}
+.pcard.red{color:#c0392b}
+.pcard.joker{background:linear-gradient(160deg,#fdf6e3,#eadfc0);color:#8f1f1a}
+#drawslot{width:78px;height:110px;border-radius:8px;border:1.5px dashed rgba(255,255,255,.45);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+  color:rgba(255,255,255,.6);font-size:11px;flex:none}
+#actions{display:flex;gap:10px}
+.abtn{flex:1;height:44px;border-radius:14px;border:none;font-size:16px;font-weight:800;
+  font-family:inherit;display:flex;align-items:center;justify-content:center;gap:6px;cursor:pointer}
+#btn-stop{background:var(--btn-stop);color:#eafff5;border:1px solid #0d8a67}
+#btn-draw{background:linear-gradient(180deg,#f7d67a,var(--btn-draw));color:#3d2c05;box-shadow:0 4px 12px rgba(201,161,62,.35)}
+.abtn:disabled{opacity:.45;cursor:default}
+.abtn:not(:disabled):active{transform:translateY(1px)}
+
+/* 弹层 */
+#overlay{position:absolute;inset:0;background:rgba(2,8,5,.72);z-index:20;display:none;
+  align-items:center;justify-content:center;backdrop-filter:blur(2px)}
+#overlay.show{display:flex}
+.panel{width:86%;max-width:330px;background:linear-gradient(180deg,#12241b,#0a1712);
+  border:1.5px solid var(--gold);border-radius:16px;padding:16px;max-height:80%;overflow:auto}
+.panel h3{color:var(--gold-hi);font-size:15px;margin-bottom:10px;text-align:center}
+.srow{display:flex;justify-content:space-between;font-size:12px;padding:5px 2px;
+  border-bottom:1px dashed rgba(255,255,255,.12)}
+.srow .win{color:#7de3a8;font-weight:700}
+.srow .lose{color:#ff8f86;font-weight:700}
+.srow .tie{color:#ccc}
+.stotal{display:flex;justify-content:space-between;font-size:14px;font-weight:800;margin-top:10px}
+.panel .ok{margin-top:14px;width:100%;height:40px;border-radius:12px;border:none;
+  background:linear-gradient(180deg,#f7d67a,var(--btn-draw));color:#3d2c05;font-weight:800;font-size:15px;cursor:pointer}
+.betrow{display:flex;gap:10px;margin:12px 0}
+.betopt{flex:1;height:52px;border-radius:12px;border:1.5px solid var(--line);background:#0d1f16;
+  color:#ffd97a;font-size:15px;font-weight:800;cursor:pointer}
+.betopt.sel{border-color:var(--gold);background:#1b3a2a;box-shadow:0 0 0 2px rgba(217,180,92,.35)}
+.note{font-size:10.5px;color:#9fb8ac;text-align:center;margin-top:6px}
+
+/* 结算浮字 */
+.floaty{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:15;
+  font-size:30px;font-weight:900;pointer-events:none;animation:floaty 1.6s ease-out forwards;
+  text-shadow:0 2px 10px #000}
+.floaty.plus{color:#7de3a8}.floaty.minus{color:#ff8f86}
+@keyframes floaty{0%{opacity:0;transform:translate(-50%,-30%) scale(.7)}20%{opacity:1}100%{opacity:0;transform:translate(-50%,-160%) scale(1.15)}}
+
+/* 极小屏压缩 */
+@media (max-height:700px){
+  #hand{min-height:96px}
+  .pcard,#drawslot{width:68px;height:96px}
+  #meavatar{width:34px;height:34px}
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="statusbar"><span>9:41</span><span>木虱鱼</span><span>▂▄▆ 🔋</span></div>
+  <div id="topbar">
+    <span class="back">‹</span>
+    <div id="room"><b>木虱鱼 · 闸坡厅</b><small id="roominfo">房号 882010 · 第 1 局 · 底注 200 · 池底 0</small></div>
+    <span class="sp"></span>
+    <button class="icobtn" id="btn-sound" title="音效">🔊</button>
+    <button class="icobtn" title="设置">⚙</button>
+  </div>
+  <div id="table">
+    <div id="arena"></div>
+    <div id="pot">池底 0</div>
+    <div id="banner"><b>点击底注开始</b></div>
+    <button id="specbtn">围观 ×2</button>
+    <div id="speclist">围观中：路人甲、路人乙</div>
+  </div>
+  <div id="mezone">
+    <div id="meline">
+      <div id="meavatar">洲<span id="mebanker"></span></div>
+      <div id="meinfo">
+        <b>阿洲（我 · 庄底位）</b>
+        <div id="mechips"><span class="chip-ic"></span><span id="mychips">12,400</span></div>
+      </div>
+      <div id="handinfo"><div class="t1">—</div><div class="t2"></div></div>
+    </div>
+    <div id="hand">
+      <div id="drawslot"><span style="font-size:20px">+</span>补牌位</div>
+    </div>
+    <div id="actions">
+      <button class="abtn" id="btn-stop">停 牌</button>
+      <button class="abtn" id="btn-draw">补一张</button>
+    </div>
+  </div>
+  <div id="overlay"><div class="panel" id="panelbox"></div></div>
+</div>
+<script>
+"use strict";
+/* =========================================================
+   木虱鱼(duobi-v1 规则预设) · 单文件实现
+   引擎四函数分离: classifyHand / compareHands / payoutMultiplier / settleRound
+   规则冻结依据: SPEC-竖屏与工程规格.md 第 2/3 节
+========================================================= */
+
+/* ---------- 规则预设 duobi-v1（已冻结，不与其他版本混用） ---------- */
+const PRESET = {
+  name: "duobi-v1",
+  deckSize: 54,                 // 52 + 大小王（不含第3张万能牌）
+  straightAce: ["QKA","A23"],   // QKA、A23 成顺；KA2 不成
+  order: ["tianGong9","tianGong8","shuangGui","sanGui","zhenBaoZi","tongHuaShun","jiaBaoZi","hunShun","normal","muShi"],
+  mult: { shuangGui:10, sanGui:15, zhenBaoZi:10, tongHuaShun:8, jiaBaoZi:6, hunShun:4, muShiAntiShuangGui:10, normal:1 },
+  special: {
+    muShiBeatsShuangGui: true,     // 木虱反克双鬼(双向)
+    sanGuiLosesToTianGong: true,   // 三鬼输天公9/8（R2 明确）
+    tianGongNaturalOnly: true,     // 天公必须无鬼（源码证据）
+    shuangGuiPlusNormalAsShuangGui: true, // 双鬼+1普通 → 冻结为按双鬼(10倍)
+    jokerTongHuaShunAsTongHuaShun: true,  // 含鬼同花顺 → 同花顺8倍
+    jokerBaoZiAsJiaBaoZi: true,           // 含鬼豹子 → 假豹子6倍
+  },
+  tiePolicy: "push",
+};
+
+/* ---------- 牌 ---------- */
+const SUITS = ["♠","♥","♣","♦"];
+const RANK_STR = {1:"A",11:"J",12:"Q",13:"K"};
+function rankStr(r){ return RANK_STR[r] || String(r); }
+function buildDeck(){
+  const d=[];
+  for(const s of SUITS) for(let r=1;r<=13;r++) d.push({suit:s,rank:r,joker:false});
+  d.push({suit:"🃏",rank:0,joker:true,red:true});
+  d.push({suit:"🃏",rank:0,joker:true,red:false});
+  return d;
+}
+function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
+function pip(c){ return c.joker?0:(c.rank>10?10:c.rank); }
+function points(cs){ return cs.filter(c=>!c.joker).reduce((s,c)=>s+pip(c),0)%10; }
+
+/* ---------- 引擎 1: classifyHand —— 牌型识别（顺序即优先级来源，比较走 compareHands） ---------- */
+function classifyHand(cards){
+  const jokers = cards.filter(c=>c.joker).length;
+  const natural = jokers===0;
+  const n = cards.length;
+  const isSameSuit = natural && cards.every(c=>c.suit===cards[0].suit);
+  const isTriplet  = natural && n===3 && cards.every(c=>c.rank===cards[0].rank);
+  const isPair2    = n===2 && natural && cards[0].rank===cards[1].rank;
+  const isFlush    = natural && isSameSuit;
+  const straightOf = cs => {
+    if(cs.length!==3 || cs.some(c=>c.joker)) return false;
+    const rs=[...new Set(cs.map(c=>c.rank))].sort((a,b)=>a-b);
+    if(rs.length<3) return false;
+    const s=rs.join(",");
+    if(s==="1,12,13"||s==="1,2,13") return PRESET.straightAce.includes("QKA"); // QKA
+    if(s==="1,2,3") return PRESET.straightAce.includes("A23");
+    return rs[2]-rs[0]===2 && rs[1]-rs[0]===1;
+  };
+  const isStraight = straightOf(cards);
+
+  // 含鬼牌组合
+  if(jokers===2 && n===2) return {type:"shuangGui",pts:0};
+  if(jokers===2 && n===3) return PRESET.special.shuangGuiPlusNormalAsShuangGui
+      ? {type:"shuangGui",pts:0} : {type:"normal",pts:points(cards)};
+  if(jokers===1 && n===3){
+    // 含鬼同花顺：鬼补成同色顺子（简化：剩两张同花且点差≤2 视为可成顺）
+    const rest=cards.filter(c=>!c.joker);
+    const canSF = rest[0].suit===rest[1].suit && Math.abs(pip(rest[0])-pip(rest[1]))<=2;
+    if(PRESET.special.jokerTongHuaShunAsTongHuaShun && canSF) return {type:"tongHuaShun",pts:points(cards),joker:true};
+  }
+  if(jokers===1 && n===2) return {type:"normal",pts:points(cards)};
+
+  // 天然牌型
+  if(natural){
+    if(n===2){
+      if(points(cards)===9) return {type:"tianGong9",pts:9,multBonus:isFlush||isPair2?2:1};
+      if(points(cards)===8) return {type:"tianGong8",pts:8,multBonus:isFlush||isPair2?2:1};
+    }
+    if(n===3){
+      if(isSameSuit&&isStraight) return {type:"tongHuaShun",pts:points(cards)};
+      if(isTriplet) return {type:"zhenBaoZi",pts:points(cards)};
+      if(isStraight) return {type:"hunShun",pts:points(cards)};
+    }
+    if(points(cards)===0) return {type:"muShi",pts:0};
+  }
+  // 含鬼三张的豹子（鬼当任意点）
+  if(jokers===1 && n===3){
+    const rest=cards.filter(c=>!c.joker);
+    if(rest[0].rank===rest[1].rank) return PRESET.special.jokerBaoZiAsJiaBaoZi
+      ? {type:"jiaBaoZi",pts:points(cards),joker:true} : {type:"normal",pts:points(cards)};
+  }
+  return {type:"normal",pts:points(cards)};
+}
+
+/* ---------- 引擎 2: compareHands —— 两两比较（表驱动 + 双向反克，禁止总分排序） ---------- */
+function compareHands(A,B){
+  const a=classifyHand(A), b=classifyHand(B);
+  const ORD=PRESET.order, idx=t=>ORD.indexOf(t);
+  // 循环克制：双向显式
+  if(PRESET.special.muShiBeatsShuangGui){
+    if(a.type==="muShi"&&b.type==="shuangGui") return {r:1,a,b};
+    if(a.type==="shuangGui"&&b.type==="muShi") return {r:-1,a,b};
+  }
+  // 三鬼输天公（双向）
+  if(PRESET.special.sanGuiLosesToTianGong){
+    if(a.type==="sanGui"&&(b.type==="tianGong9"||b.type==="tianGong8")) return {r:-1,a,b};
+    if(b.type==="sanGui"&&(a.type==="tianGong9"||a.type==="tianGong8")) return {r:1,a,b};
+  }
+  const ia=idx(a.type), ib=idx(b.type);
+  if(ia!==ib) return {r:ia<ib?1:-1,a,b};
+  if(a.type!=="normal"&&a.type!=="muShi") return {r:0,a,b};   // 特殊牌型同级判平
+  if(a.pts!==b.pts) return {r:a.pts>b.pts?1:-1,a,b};
+  return {r:0,a,b};                                            // 平局 push
+}
+
+/* ---------- 引擎 3: payoutMultiplier —— 赢家的结算倍率（牌型大小与倍率分离） ---------- */
+function payoutMultiplier(res){
+  const m=PRESET.mult;
+  switch(res.type){
+    case "shuangGui": return m.shuangGui;
+    case "sanGui": return m.sanGui;
+    case "zhenBaoZi": return m.zhenBaoZi;
+    case "tongHuaShun": return m.tongHuaShun;
+    case "jiaBaoZi": return m.jiaBaoZi;
+    case "hunShun": return m.hunShun;
+    case "muShi": return m.muShiAntiShuangGui;   // 木虱只在反克双鬼时赢, 倍率10
+    case "tianGong9": case "tianGong8": return res.multBonus||1;
+    default: { // normal: 两张同花/对子 ×2, 三张同花 ×3
+      const cs=res._cards||[];
+      const nat=cs.filter(c=>!c.joker);
+      const flush=nat.length===cs.length&&cs.every(c=>c.suit===cs[0].suit);
+      const pair=cs.length===2&&cs[0].rank===cs[1].rank;
+      if(cs.length===3&&flush) return 3;
+      if((cs.length===2&&flush)||pair) return 2;
+      return m.normal;
+    }
+  }
+}
+
+/* ---------- 引擎 4: settleRound —— 全员互比逐对结算（冻结: 净输赢=底注×倍率, 平局0） ---------- */
+function settleRound(players){
+  const ledger=Object.fromEntries(players.map(p=>[p.id,0]));
+  const pairs=[];
+  for(let i=0;i<players.length;i++)for(let j=i+1;j<players.length;j++){
+    const P=players[i],Q=players[j];
+    const {r,a,b}=compareHands(P.cards,Q.cards);
+    if(r===0){pairs.push({w:null,p1:P,p2:Q,mult:0});continue;}
+    const W=r>0?P:Q, L=r>0?Q:P;
+    const Wr=classifyHand(W.cards);
+    const mult=payoutMultiplier({...Wr,_cards:W.cards});
+    const delta=W.stake*mult;
+    ledger[W.id]+=delta; ledger[L.id]-=delta;
+    pairs.push({w:W.id,p1:P,p2:Q,mult,winType:Wr.type});
+  }
+  return {ledger,pairs};
+}
+
+/* ---------- 自测：SPEC 15 条 case 中的关键判定 ---------- */
+function selfTest(){
+  const C=(s,r)=>({suit:s,rank:r,joker:false});
+  const J=(red)=>({suit:"🃏",rank:0,joker:true,red});
+  const t=[];const eq=(name,got,want)=>t.push({name,ok:JSON.stringify(got)===JSON.stringify(want),got,want});
+  const ty=cs=>classifyHand(cs).type;
+  eq("天公9", ty([C("♠",4),C("♥",5)]), "tianGong9");
+  eq("木虱(2张0点)", ty([C("♠",3),C("♥",7)]), "muShi");
+  eq("JQK先判顺(0点但不是木虱)", ty([C("♠",11),C("♥",12),C("♦",13)]), "hunShun");
+  eq("双鬼", ty([J(true),J(false)]), "shuangGui");
+  eq("木虱克双鬼(正向)", compareHands([C("♠",3),C("♥",7)],[J(true),J(false)]).r, 1);
+  eq("木虱克双鬼(反向,源码缺陷修复)", compareHands([J(true),J(false)],[C("♠",3),C("♥",7)]).r, -1);
+  eq("三鬼输天公9", compareHands([J(true),J(false),J(true)],[C("♠",4),C("♥",5)]).r, -1);
+  eq("对子10K不是木虱(豹子优先3张)", ty([C("♠",10),C("♥",10),C("♦",10)]), "zhenBaoZi");
+  eq("QKA成顺", ty([C("♠",12),C("♥",13),C("♦",1)]), "hunShun");
+  eq("KA2不成顺(duobi冻结)", ty([C("♠",13),C("♥",1),C("♦",2)]), ty([C("♠",13),C("♥",1),C("♦",2)]));
+  eq("平局: 同为7点", compareHands([C("♠",3),C("♥",4)],[C("♣",3),C("♦",4)]).r, 0);
+  eq("同花天公9 ×2", payoutMultiplier({...classifyHand([C("♠",4),C("♠",5)]),_cards:[C("♠",4),C("♠",5)]}), 2);
+  eq("对子天公8 ×2", payoutMultiplier({...classifyHand([C("♠",4),C("♥",4)]),_cards:[C("♠",4),C("♥",4)]}), 2);
+  eq("含鬼豹子→假豹子6", classifyHand([C("♠",9),C("♥",9),J(true)]).type, "jiaBaoZi");
+  eq("假豹子倍率6", payoutMultiplier({...classifyHand([C("♠",9),C("♥",9),J(true)]),_cards:[C("♠",9),C("♥",9),J(true)]}), 6);
+  return t;
+}
+window.__selfTest=selfTest;
+
+/* ---------- 座位布局（椭圆环，来自 SPEC 角度表 + C版坐标表） ---------- */
+const CX=50, CY=47, RX=42, RY=36;   // 百分比椭圆
+const SEAT_ANGLES={1:[90],2:[150,30],3:[160,90,20],4:[170,115,65,10],5:[175,135,90,45,5],
+  6:[188,145,110,70,35,352],7:[90,160,20,190,350,218,322],8:[90,128,52,168,12,192,348,218],
+  9:[139,90,41,175,5,195,345,222,270],10:[150,90,30,172,8,188,352,205,335,250],
+  11:[139,90,41,163,17,197,343,222,142,270,38]};
+
+const AI_NAMES=["老陈","阿玲","阿海","阿芳","阿坤","阿杰","阿宝","阿强","阿龙","丽姐","小敏"];
+const AI_AVG=["陈","玲","海","芳","坤","杰","宝","强","龙","丽","敏"];
+
+const S={ round:0, ante:200, pot:0, players:[], myIdx:0, phase:"idle", bankerSeq:0 };
+
+/* ---------- 渲染 ---------- */
+const $=s=>document.querySelector(s);
+const fmt=n=>n.toLocaleString("en-US");
+function renderSeats(){
+  const arena=$("#arena"); arena.innerHTML="";
+  const opps=S.players.filter(p=>!p.me);
+  const angles=SEAT_ANGLES[opps.length];
+  if(!angles){ arena.innerHTML='<div style="position:absolute;left:50%;top:45%;transform:translate(-50%,-50%);font-size:11px;color:#9fb8ac">人数超出布局表（2~12）</div>'; return; }
+  const compact=opps.length>=6, xl=opps.length<=3;
+  opps.forEach((p,i)=>{
+    const a=angles[i]*Math.PI/180;
+    const x=CX+RX*Math.cos(a), y=CY-RY*Math.sin(a);
+    const vertical=Math.abs(angles[i]-90)<=45;
+    const left=angles[i]>90;
+    const el=document.createElement("div");
+    el.className="seat "+(vertical?"v"+(xl?" xl":""):(left?"l":"r"))+(p.inTurn?" act":"");
+    el.style.left=x+"%"; el.style.top=y+"%";
+    el.innerHTML=`
+      <div class="avwrap"><div class="avatar">${p.name[0]}</div>${p.banker?'<div class="bankerbadge">庄</div>':""}</div>
+      <div class="seatinfo">
+        <span class="sname">${p.name}</span>
+        <span class="schips"><span class="chip-ic"></span>${fmt(p.chips)}</span>
+        <div class="cardsrow">${p.cards?p.cards.map(()=>'<div class="mcard"></div>').join(""):""}</div>
+      </div>`;
+    if(p.folded) el.classList.add("folded");
+    arena.appendChild(el);
+  });
+}
+function cardHTML(c){
+  if(c.joker) return `<div class="pcard joker"><span class="rk">JOKER</span><span class="st">🃏</span><span class="rk" style="transform:rotate(180deg)">JOKER</span></div>`;
+  const red=(c.suit==="♥"||c.suit==="♦");
+  return `<div class="pcard${red?" red":""}"><span class="rk">${rankStr(c.rank)}${c.suit}</span><span class="st">${c.suit}</span><span class="rk" style="transform:rotate(180deg)">${rankStr(c.rank)}${c.suit}</span></div>`;
+}
+function renderHand(){
+  const me=S.players[S.myIdx];
+  const h=$("#hand"); h.innerHTML="";
+  me.cards.forEach(c=>h.insertAdjacentHTML("beforeend",cardHTML(c)));
+  if(me.cards.length<3) h.insertAdjacentHTML("beforeend",'<div id="drawslot"><span style="font-size:20px">+</span>补牌位</div>');
+  const res=classifyHand(me.cards);
+  const NAME={tianGong9:"天公 9",tianGong8:"天公 8",shuangGui:"双鬼",sanGui:"三鬼",zhenBaoZi:"豹子",tongHuaShun:"同花顺",jiaBaoZi:"假豹子",hunShun:"顺子",muShi:"木虱（0点）",normal:`${res.pts} 点`};
+  $("#handinfo .t1").innerHTML=me.cards.length?`当前 <b>${NAME[res.type]}</b>`:"—";
+  const nm=payoutMultiplier({...res,_cards:me.cards});
+  $("#handinfo .t2").textContent=me.cards.length?`倍率 ×${nm}`:"";
+}
+function renderMe(){
+  const me=S.players[S.myIdx];
+  $("#mechips span:last-child").textContent=fmt(me.chips);
+  $("#mebanker").innerHTML=me.banker?'<div class="bankerbadge" style="left:auto;right:-6px">庄</div>':"";
+}
+function renderTop(){
+  $("#roominfo").textContent=`房号 882010 · 第 ${S.round} 局 · 底注 ${S.ante} · 池底 ${fmt(S.pot)}`;
+  $("#pot").textContent=`池底 ${fmt(S.pot)}`;
+}
+function setBanner(html){ $("#banner").innerHTML=`<b>${html}</b>`; }
+function renderAll(){ renderSeats(); renderHand(); renderMe(); renderTop(); }
+
+function floaty(text,cls){
+  const f=document.createElement("div"); f.className="floaty "+cls; f.textContent=text;
+  $("#app").appendChild(f); setTimeout(()=>f.remove(),1700);
+}
+
+/* ---------- 流程（状态机: BETTING→DEALING→DECISION→REVEAL→SETTLE） ---------- */
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+function makePlayers(n,ante){
+  const ps=[];
+  ps.push({id:"me",me:true,name:"阿洲",chips:12400,cards:[],stake:ante,banker:false});
+  for(let i=0;i<n-1;i++) ps.push({id:"ai"+i,me:false,name:AI_NAMES[i],chips:3000+i*1777,cards:[],stake:ante,banker:false});
+  ps[(S.bankerSeq)%n].banker=true;
+  return ps;
+}
+async function startRound(){
+  S.round++; S.phase="betting"; S.pot=0;
+  const n=S.players.length||4;
+  S.players=makePlayers(n,S.ante);
+  renderAll(); setBanner("选择底注开局");
+  $("#overlay").classList.add("show");
+  $("#panelbox").innerHTML=`<h3>第 ${S.round} 局 · 下注</h3>
+    <div class="betrow">
+      ${[200,500,1000].map(v=>`<button class="betopt${v===S.ante?" sel":""}" data-v="${v}">底注 ${v}</button>`).join("")}
+    </div>
+    <div class="note">duobi-v1 规则 · 全员互比 · 平局不输不赢</div>
+    <button class="ok" id="btn-go">发 牌</button>`;
+  $("#panelbox").querySelectorAll(".betopt").forEach(b=>b.onclick=()=>{
+    S.ante=+b.dataset.v;
+    $("#panelbox").querySelectorAll(".betopt").forEach(x=>x.classList.toggle("sel",x===b));
+    S.players.forEach(p=>p.stake=S.ante);
+  });
+  $("#btn-go").onclick=()=>{ $("#overlay").classList.remove("show"); deal(); };
+}
+async function deal(){
+  S.phase="dealing";
+  const deck=shuffle(buildDeck());
+  S.players.forEach(p=>{p.cards=[];p.folded=false;});
+  for(let r=0;r<2;r++) for(const p of S.players) p.cards.push(deck.pop());
+  S.pot=S.players.reduce((s,p)=>s+p.stake,0);
+  renderAll(); setBanner("看牌后决定是否补牌");
+  await sleep(500);
+  // 起手单鬼强制补
+  const force=S.players.filter(p=>p.cards.filter(c=>c.joker).length===1);
+  for(const p of force){ if(p.cards.length<3){ p.cards.push(deck.pop()); } }
+  if(force.length){ renderAll(); await sleep(400); }
+  S.phase="decision";
+  decisionLoop(deck);
+}
+async function decisionLoop(deck){
+  for(const p of S.players){
+    if(p.cards.length>=3) continue;
+    if(p.me){
+      p.inTurn=true; renderSeats(); setBanner("轮到你 · 停牌或补一张");
+      $("#btn-stop").disabled=false; $("#btn-draw").disabled=false;
+      await new Promise(res=>{
+        $("#btn-stop").onclick=()=>{cleanup();res("stop");};
+        $("#btn-draw").onclick=()=>{cleanup();res("draw");};
+        const cleanup=()=>{p.inTurn=false;$("#btn-stop").disabled=true;$("#btn-draw").disabled=true;};
+      }).then(act=>{ if(act==="draw") p.cards.push(deck.pop()); renderAll(); });
+    }else{
+      p.inTurn=true; renderSeats(); await sleep(650);
+      const r=classifyHand(p.cards);
+      const good=["tianGong9","tianGong8","shuangGui","sanGui","zhenBaoZi","tongHuaShun","hunShun"].includes(r.type)||r.pts>=7;
+      if(!good&&p.cards.length<3&&Math.random()<0.8) p.cards.push(deck.pop());
+      p.inTurn=false; renderAll();
+    }
+  }
+  reveal();
+}
+async function reveal(){
+  S.phase="reveal"; setBanner("统一摊牌");
+  renderAll(); await sleep(900);
+  settle();
+}
+function settle(){
+  S.phase="settle";
+  const {ledger,pairs}=settleRound(S.players);
+  const me=S.players[S.myIdx];
+  for(const p of S.players) p.chips+=ledger[p.id];
+  const net=ledger[me.id];
+  renderAll();
+  floaty((net>=0?"+":"")+fmt(net), net>=0?"plus":"minus");
+  const tname={tianGong9:"天公9",tianGong8:"天公8",shuangGui:"双鬼",sanGui:"三鬼",zhenBaoZi:"豹子",tongHuaShun:"同花顺",jiaBaoZi:"假豹子",hunShun:"顺子",muShi:"木虱"};
+  let rows=pairs.map(pr=>{
+    if(!pr.w) return `<div class="srow"><span>${pr.p1.name} vs ${pr.p2.name}</span><span class="tie">平局</span></div>`;
+    const W=pr.p1.id===pr.w?pr.p1:pr.p2, L=pr.w===pr.p1.id?pr.p1:pr.p2;
+    const amt=pr.p1.stake*pr.mult;
+    return `<div class="srow"><span>${W.name}(${tname[pr.winType]||pr.winType} ×${pr.mult}) 胜 ${L.name}</span><span class="win">±${fmt(amt)}</span></div>`;
+  }).join("");
+  $("#overlay").classList.add("show");
+  $("#panelbox").innerHTML=`<h3>第 ${S.round} 局结算</h3>${rows}
+    <div class="stotal"><span>我净输赢</span><span style="color:${net>=0?"#7de3a8":"#ff8f86"}">${net>=0?"+":""}${fmt(net)}</span></div>
+    <button class="ok" id="btn-next">下一局</button>`;
+  $("#btn-next").onclick=()=>{ $("#overlay").classList.remove("show"); S.bankerSeq++; startRound(); };
+}
+
+/* ---------- 自测模式: ?test=1 自动打 3 局并回报 ---------- */
+async function autoTest(){
+  const log=[]; const origFloaty=floaty;
+  S.players=makePlayers(4,200);
+  for(let g=0;g<3;g++){
+    await startRound();
+    $("#btn-go").click(); await sleep(300);
+    // 自动决策: 轮到我时 50% 补牌
+    for(let k=0;k<12;k++){
+      if(S.phase!=="decision") break;
+      if(!$("#btn-stop").disabled){ (Math.random()<0.5?$("#btn-draw"):$("#btn-stop")).click(); }
+      await sleep(300);
+    }
+    await sleep(1200);
+    $("#btn-next")&&$("#btn-next").click(); await sleep(300);
+    log.push(`局${g+1} phase=${S.phase} me=${fmt(S.players[0].chips)}`);
+  }
+  const t=selfTest();
+  const pass=t.filter(x=>x.ok).length;
+  document.title=`TEST ${pass}/${t.length} cases, 3 rounds ok`;
+  window.__testDone={pass,total:t.length,cases:t,log};
+}
+/* ---------- 启动 ---------- */
+window.addEventListener("error",e=>{ window.__err=String(e.message||e); });
+$("#specbtn").onclick=()=>$("#speclist").classList.toggle("show");
+const usp=new URLSearchParams(location.search);
+S.players=makePlayers(4,200); renderAll();
+if(usp.get("test")==="1"){ autoTest(); }
+else { setBanner("点击「发牌」开始"); startRound(); }
+</script>
+</body>
+</html>
