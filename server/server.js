@@ -226,7 +226,7 @@ function reveal(room) {
   broadcast(room, 'reveal_all', { hands: room.players.map(p => ({ pid: p.pid, name: p.name, cards: p.cards })) });
   const { ledger, pairs } = E.settleRound(room.players);
   for (const p of room.players) p.chips += ledger[p.id] || 0;
-  room.lastSettle = { ledger, pairs };
+  scheduleSave();
   broadcast(room, 'settle_result', {
     ledger, pairs: pairs.map(pr => ({
       w: pr.w, mult: pr.mult, paid: pr.paid || 0, winType: pr.winType,
@@ -276,6 +276,7 @@ async function runBotRound(room) {
   await sleep(1000);
   const { ledger } = E.settleRound(room.players);
   for (const p of room.players) p.chips += ledger[p.id] || 0;
+  scheduleSave();
   broadcast(room, 'room_state', publicState(room));
   await sleep(3000);
   if (rooms.has(room.id)) runBotRound(room);
@@ -288,7 +289,10 @@ io.on('connection', (sock) => {
     let room = rooms.get(roomId);
     if (!room) { room = new Room(roomId, { ante: 200, maxPlayers: 9 }); rooms.set(roomId, room); }
     if (room.phase === 'waiting' && !room.isFull()) {
-      const p = room.addPlayer(sock.id, 'p' + (room._pSeq = (room._pSeq || 0) + 1), name || '玩家', face);
+      // 同名续档：同名字真人复用旧座位（页面刷新/服务重启后筹码不重开）
+      let p = room.players.find(x => !x.isBot && x.name === (name || '玩家'));
+      if (p) { p.sid = sock.id; if (face) p.face = face; }
+      else { p = room.addPlayer(sock.id, 'p' + (room._pSeq = (room._pSeq || 0) + 1), name || '玩家', face); scheduleSave(); }
       const target = Math.min(botCount || 0, room.maxPlayers - 1);
       if (target > 0) room.fillBots(room.players.length + target);
       sock.emit('joined', { pid: p.pid, roomId, state: publicState(room) });
@@ -308,6 +312,7 @@ io.on('connection', (sock) => {
     rooms.set(roomId, room);
     const p = room.addPlayer(sock.id, 'p' + (room._pSeq = (room._pSeq || 0) + 1), name || '房主', face);
     room.fillBots(botCount || 3);
+    scheduleSave();
     sock.emit('room_created', { roomId, pid: p.pid, state: publicState(room) });
     broadcast(room, 'room_state', publicState(room));
     room._startTimer = setTimeout(() => {
@@ -337,8 +342,78 @@ io.on('connection', (sock) => {
   });
 });
 
-/* ==================== Bot 自嗨启动 ==================== */
-setTimeout(() => { for (let i = 0; i < BOT_ROOM_COUNT; i++) setTimeout(() => createBotRoom(200 + i * 100), i * 1500); }, 2000);
+/* ==================== 简单持久化（yxx store 模式：内存 + 防抖落盘 + 启动恢复） ==================== */
+const fs = require('fs');
+const DATA_DIR = path.join(__dirname, 'data');
+const SNAP_FILE = path.join(DATA_DIR, 'state.json');
+
+function serializeRooms() {
+  return [...rooms.values()].map(r => ({
+    id: r.id, ante: r.ante, maxPlayers: r.maxPlayers, round: r.round,
+    bankerSeq: r.bankerSeq, _pSeq: r._pSeq || 0, _botSeq: r._botSeq || 0,
+    stats: r.stats,
+    players: r.players.map(p => ({
+      pid: p.pid, name: p.name, face: p.face, isBot: p.isBot,
+      chips: p.chips, personality: p.personality || null,
+    })),
+  }));
+}
+
+let snapTimer = null;
+function scheduleSave() {
+  if (snapTimer) return;
+  snapTimer = setTimeout(() => {
+    snapTimer = null;
+    try {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+      const tmp = SNAP_FILE + '.tmp';
+      fs.writeFileSync(tmp, JSON.stringify(serializeRooms()));
+      fs.renameSync(tmp, SNAP_FILE);
+    } catch (e) { console.error('[store] 快照写入失败:', e.message); }
+  }, 3000);
+}
+
+function flushSave() {
+  if (snapTimer) { clearTimeout(snapTimer); snapTimer = null; }
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(SNAP_FILE, JSON.stringify(serializeRooms()));
+  } catch (e) { console.error('[store] 退出落盘失败:', e.message); }
+}
+
+function restoreRooms() {
+  try {
+    if (!fs.existsSync(SNAP_FILE)) return 0;
+    const saved = JSON.parse(fs.readFileSync(SNAP_FILE, 'utf8'));
+    for (const s of saved) {
+      const room = new Room(s.id, { ante: s.ante, maxPlayers: s.maxPlayers });
+      room.round = s.round || 0; room.bankerSeq = s.bankerSeq || 0;
+      room._pSeq = s._pSeq || 0; room._botSeq = s._botSeq || 0;
+      if (s.stats) room.stats = s.stats;
+      for (const sp of (s.players || [])) {
+        const p = room.addPlayer(null, sp.pid, sp.name, sp.face, !!sp.isBot);
+        p.chips = sp.chips;
+        if (sp.personality) p.personality = sp.personality;
+      }
+      room.phase = 'waiting';
+      rooms.set(room.id, room);
+      // bot 自嗨房恢复后直接续跑对局循环
+      if (room.id.startsWith('bot_') && room.players.length >= 2) runBotRound(room);
+    }
+    console.log(`[store] 已恢复 ${saved.length} 个房间`);
+    return saved.length;
+  } catch (e) { console.error('[store] 快照恢复失败:', e.message); return 0; }
+}
 
 /* ==================== 启动 ==================== */
+restoreRooms();
+setInterval(scheduleSave, 30000);
+process.on('SIGTERM', () => { flushSave(); process.exit(0); });
+process.on('SIGINT', () => { flushSave(); process.exit(0); });
+// bot 房补齐：恢复过的不重复建
+setTimeout(() => {
+  const have = [...rooms.values()].filter(r => r.id.startsWith('bot_')).length;
+  for (let i = have; i < BOT_ROOM_COUNT; i++) setTimeout(() => createBotRoom(200 + i * 100), i * 1500);
+}, 2000);
+
 httpServer.listen(PORT, () => { console.log(`木虱鱼服务端已启动: http://0.0.0.0:${PORT}/  (socket.io 就绪)`); });
