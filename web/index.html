@@ -143,11 +143,13 @@ to{box-shadow:0 0 0 2px rgba(242,206,120,.95),0 0 16px rgba(242,206,120,.8)}}
 .abtn:not(:disabled):active{transform:translateY(1px)}
 #btn-stop{background-image:url(assets/btn-pass.png)}
 #btn-draw{background-image:url(assets/btn-draw.png)}
-.abtn-tx{font-size:16px;font-weight:800;color:#3d2c05;letter-spacing:1px}
-#btn-draw.on{background-image:none;background:linear-gradient(180deg,#f7d67a,var(--btn-draw));
+.abtn-tx{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  font-size:16px;font-weight:800;color:#3d2c05;letter-spacing:1px;pointer-events:none}
+.abtn{position:relative}
+#btn-draw.raise{background-image:none!important;background:linear-gradient(180deg,#f7d67a,var(--btn-draw));
   box-shadow:0 0 0 2px rgba(242,206,120,.55),0 4px 12px rgba(201,161,62,.4)}
-#btn-draw.on .abtn-tx{color:#3d2c05}
-#btn-draw.raise .abtn-tx{color:#7a2f12}
+#btn-draw.raise .abtn-tx{color:#3d2c05;font-size:15px;white-space:nowrap}
+#btn-draw.raise.raised{background:linear-gradient(180deg,#ffe9a8,#f2ce78);box-shadow:0 0 0 2px rgba(255,240,190,.8),0 4px 14px rgba(242,206,120,.5)}
 #home{height:18px;flex:none;display:flex;align-items:center;justify-content:center;background:#000}
 #home i{width:110px;height:5px;border-radius:3px;background:#3a3a3e}
 
@@ -716,21 +718,28 @@ async function startRound(){
   });
   $("#btn-go").onclick=()=>{ $("#overlay").classList.remove("show"); deal(); };
 }
-// 决策顺序: 沿桌沿顺时针(角度从 90° 起递减), 保证发牌/决策顺序与视觉一致
-function seatClockOrder(){
+// 桌面顺时针顺序: 正上 -> 右上 -> 右下 -> 下 -> 左下 -> 左上
+// 角度从 90° 起递减即为顺时针; 我固定在最后(我是庄底位, 视觉上在底部)
+function tableOrder(){
   const opps=S.players.filter(p=>!p.me);
   const angles=SEAT_ANGLES[opps.length]||[];
-  return opps.map((p,i)=>({p, ang:angles[i]!==undefined?angles[i]:(90-i*30)}))
+  const cw=opps.map((p,i)=>({p, ang:angles[i]!==undefined?angles[i]:(90-i*30)}))
     .sort((a,b)=> a.ang===b.ang ? 0 : (a.ang-b.ang))
     .map(x=>x.p);
+  const me=S.players[S.myIdx];
+  return me ? cw.concat([me]) : cw;
+}
+// 行动顺序(发牌/补牌/决策共用): 庄家下一家开始, 庄家最后
+function actionOrder(){
+  const seq=tableOrder();
+  const bi=seq.findIndex(p=>p.banker);
+  if(bi<0) return seq;
+  return seq.slice(bi+1).concat(seq.slice(0,bi+1));
 }
 function dealOrder(){
-  const n=S.players.length, bi=S.players.findIndex(p=>p.banker);
+  // 庄家下一家先发, 庄家最后; 每轮同序
+  const seq=actionOrder();
   const order=[];
-  // 从庄家下家开始, 按顺时针座位序
-  const clockwise=seatClockOrder();
-  const startIdx=Math.max(0,clockwise.findIndex(p=>p.banker));
-  const seq=clockwise.map((_,k)=>clockwise[(startIdx+k)%clockwise.length]);
   for(let r=0;r<PRESET.startCards;r++) for(const p of seq) order.push(p);
   return order;
 }
@@ -763,17 +772,9 @@ async function deal(){
 }
 async function decisionLoop(deck){
   S.phase="decision";
-  // 决策顺序: 沿桌沿顺时针
-  const seq=seatClockOrder();
-  const order=[];
+  // 决策顺序: 与发牌一致(庄家下一家先, 庄家最后); 举手只是示意, 不改变顺序
+  const order=actionOrder();
   const me=S.players[S.myIdx];
-  const myTurnAt=seq.findIndex(p=>p.me);
-  // 我举手了 -> 我先补牌(展示举手的价值)
-  if(myTurnAt>=0 && S.raised.has(me.id)){
-    order.push(me, ...seq.filter((_,i)=>i!==myTurnAt));
-  }else{
-    order.push(...seq);
-  }
   for(const p of order){
     if(p.cards.length>=PRESET.maxCards) continue;
     if(p.me){
@@ -1006,14 +1007,14 @@ function updateRaiseBtn(){
   if(myTurn){
     // 轮到我: 只有"补一张"语义(素材图自带文字, 不覆盖)
     btn.style.display="flex"; btn.disabled=false;
-    btn.classList.remove("on"); btn.classList.remove("raise");
+    btn.classList.remove("on"); btn.classList.remove("raise"); btn.classList.remove("raised");
     btn.setAttribute("aria-label","补一张");
     btn.title="";
     if(tx) tx.textContent="";
   }else if(waiting){
     // 还没轮到我: 提前举手示意(可撤销) —— 覆盖成文字按钮
     btn.style.display="flex"; btn.disabled=false;
-    btn.classList.toggle("on", !!raised); btn.classList.add("raise");
+    btn.classList.toggle("raised", !!raised); btn.classList.add("raise");
     btn.setAttribute("aria-label", raised?"撤销举手":"举手示意要补牌");
     btn.title = raised ? "已举手：全桌可见，可点击撤销" : "提前举手：告诉大家你要补牌（轮到你时才能真正补）";
     if(tx) tx.textContent = raised ? "✋ 已举手 · 点击撤销" : "✋ 提前举手";
