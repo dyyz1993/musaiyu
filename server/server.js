@@ -8,7 +8,7 @@ const E = require('./engine.js');
 
 const PORT = process.env.PORT || 3010;
 const MY_TURN_SEC = 15, AI_TURN_SEC = 5;
-const BOT_ROOM_COUNT = 5;
+const BOT_ROOM_COUNT = 10, BOTS_PER_ROOM = 8;
 
 const app = express();
 const httpServer = http.createServer(app);
@@ -247,7 +247,7 @@ function createBotRoom(ante) {
   const roomId = 'bot_' + Date.now().toString(36);
   const room = new Room(roomId, { ante, maxPlayers: 9 });
   room.phase = 'playing'; rooms.set(roomId, room);
-  room.fillBots(5);
+  room.fillBots(BOTS_PER_ROOM);
   runBotRound(room);
   return room;
 }
@@ -397,8 +397,10 @@ function restoreRooms() {
       }
       room.phase = 'waiting';
       rooms.set(room.id, room);
-      // bot 自嗨房恢复后直接续跑对局循环（createBotRoom 语义 phase=playing）
-      if (room.id.startsWith('bot_') && room.players.length >= 2) { room.phase = 'playing'; runBotRound(room); }
+      // bot 自嗨房恢复后补齐到标准人数再续跑对局循环（createBotRoom 语义 phase=playing）
+      if (room.id.startsWith('bot_') && room.players.length >= 2) {
+        room.fillBots(BOTS_PER_ROOM); room.phase = 'playing'; runBotRound(room);
+      }
     }
     console.log(`[store] 已恢复 ${saved.length} 个房间`);
     return saved.length;
