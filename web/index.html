@@ -433,7 +433,6 @@ function settleRound(players){
 }
 
 
-
 /* ---------- 自测：SPEC 15 条 case 中的关键判定 ---------- */
 function selfTest(){
   const C=(s,r)=>({suit:s,rank:r,joker:false});
@@ -474,7 +473,6 @@ function selfTest(){
   return t;
 }
 window.__selfTest=selfTest;
-
 
 /* ---------- 竖屏椭圆布局（C版坐标表 + 角度表） ---------- */
 const SEAT_ANGLES={1:[90],2:[150,30],3:[160,90,20],4:[170,115,65,10],5:[175,135,90,45,5],
@@ -545,22 +543,6 @@ function renderSeats(){
       const fgc=w.querySelector(".fgc"), txt=w.querySelector(".ringtxt");
       const left=Math.max(0,(S.ringDeadline-Date.now())/1000);
       const RING_C=2*Math.PI*24;
-// 倒计时颜色: 绿(充裕) -> 黄(过半) -> 红(将超时)
-function ringColor(frac){        // frac: 剩余比例 1=刚开始 0=结束
-  const stops=[[0,"#e5544b"],[0.5,"#f2ce78"],[1,"#3ddc84"]];
-  const f=Math.max(0,Math.min(1,frac));
-  for(let i=0;i<stops.length-1;i++){
-    const [f0,c0]=stops[i], [f1,c1]=stops[i+1];
-    if(f>=f0&&f<=f1){
-      const t=(f-f0)/(f1-f0||1);
-      const hx=c=>[parseInt(c.slice(1,3),16),parseInt(c.slice(3,5),16),parseInt(c.slice(5,7),16)];
-      const a=hx(c0), b=hx(c1);
-      const mix=a.map((v,k)=>Math.round(v+(b[k]-v)*t));
-      return `rgb(${mix[0]},${mix[1]},${mix[2]})`;
-    }
-  }
-  return "#3ddc84";
-}
       fgc.setAttribute("stroke-dashoffset", RING_C*(1-left/S.ringTotal));
       fgc.setAttribute("stroke", ringColor(left/S.ringTotal));
       if(txt){ txt.textContent=Math.ceil(left); txt.style.color = (left/S.ringTotal)<0.3 ? "#ffd0cc" : "#fff"; }
@@ -602,6 +584,23 @@ function renderAll(){ renderSeats(); renderHand(); renderMe(); renderTop(); }
 function setBanner(html){ $("#banner").innerHTML=`<b>${html}</b>`; }
 const RING_C=2*Math.PI*24;
 // 倒计时颜色: 绿(充裕) -> 黄(过半) -> 红(将超时)
+// 倒计时颜色: 绿(充裕) -> 黄(过半) -> 红(将超时)
+function ringColor(frac){        // frac: 剩余比例 1=刚开始 0=结束
+  const stops=[[0,"#e5544b"],[0.5,"#f2ce78"],[1,"#3ddc84"]];
+  const f=Math.max(0,Math.min(1,frac));
+  for(let i=0;i<stops.length-1;i++){
+    const [f0,c0]=stops[i], [f1,c1]=stops[i+1];
+    if(f>=f0&&f<=f1){
+      const t=(f-f0)/(f1-f0||1);
+      const hx=c=>[parseInt(c.slice(1,3),16),parseInt(c.slice(3,5),16),parseInt(c.slice(5,7),16)];
+      const a=hx(c0), b=hx(c1);
+      const mix=a.map((v,k)=>Math.round(v+(b[k]-v)*t));
+      return `rgb(${mix[0]},${mix[1]},${mix[2]})`;
+    }
+  }
+  return "#3ddc84";
+}
+
 function startRing(sec,onEnd,pid){
   const RING_C=2*Math.PI*24;
 // 倒计时颜色: 绿(充裕) -> 黄(过半) -> 红(将超时)
