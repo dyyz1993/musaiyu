@@ -678,6 +678,8 @@ async function decisionLoop(deck){
       $("#btn-stop").disabled=false; $("#btn-draw").disabled=!canDraw;
       $("#btn-draw").style.display=canDraw?"flex":"none";
       let done=false;
+      let resolveTurn=null;
+      const turnPromise=new Promise(r=>{ resolveTurn=r; });
       // 补牌入口(补牌位 / 补一张按钮 共用)
       const doDraw=()=>{
         if(done||!canDraw) return;
@@ -687,17 +689,18 @@ async function decisionLoop(deck){
         S.onDrawRequest=null; S.phase="decision";
         p.inTurn=false; $("#btn-stop").disabled=true; $("#btn-draw").disabled=true;
         renderSeats(); setBanner("你补了一张");
+        if(resolveTurn){ resolveTurn("draw"); resolveTurn=null; }
       };
       S.onDrawRequest=doDraw;
       const finish=(act)=>{ if(done) return; done=true; clearTimeout(ringTimer); stopRing();
         S.onDrawRequest=null; S.phase="decision";
         p.inTurn=false; $("#btn-stop").disabled=true; $("#btn-draw").disabled=true;
-        $("#btn-draw").style.display="flex"; res(act); };
-      const res=await new Promise(r=>{
-        $("#btn-stop").onclick=()=>finish("pass");
-        $("#btn-draw").onclick=()=>doDraw();
-        startRing(MY_TURN_SEC, ()=>{ setBanner("超时 · 自动过"); finish("pass"); });
-      });
+        $("#btn-draw").style.display="flex";
+        if(resolveTurn){ resolveTurn(act); resolveTurn=null; } };
+      $("#btn-stop").onclick=()=>finish("pass");
+      $("#btn-draw").onclick=()=>doDraw();
+      startRing(MY_TURN_SEC, ()=>{ setBanner("超时 · 自动过"); finish("pass"); });
+      await turnPromise;
       renderSeats();
     } else {
       p.inTurn=true; renderSeats();
