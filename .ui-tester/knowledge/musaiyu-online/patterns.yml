@@ -72,3 +72,15 @@ pages_proxy_asymmetry_probe:
 
 dashboard_dash_render_note:
   description: "dashboard 指标卡的 '—' 是 CSS 样式横杠(元素), 不是文本字符 — innerText 里 grep '—' 数量为 0, 判无数据别用文本横杠, 用卡内数字缺失+refresh err"
+
+# ===== 2026-10-30 v4 追加 =====
+
+acao_single_header_probe:
+  description: "CORS 双头(Duplicate Access-Control-Allow-Origin)故障的最快判定法"
+  js: "curl -s -D - -o /dev/null -H 'Origin: https://musaiyu.pages.dev' <api-url> | grep -i access-control"
+  expected: "恰好 1 条 access-control-allow-origin; 出现 2 条同名头 = 双头, 浏览器直接拒收 fetch (页面表现为 TypeError: Failed to fetch)"
+  note: "双头的两种修法: 中间层(nginx)统一出 + 应用层(express)停出; 修好后页面 eval fetch 探针 status=200 即闭环"
+
+eval_envvar_pitfall:
+  description: "session 名存 env 文件再 source 时, 变量名要对上 (存的是 SESSION= 却用 $S → --session 吞掉 eval 作为参数值, JS 被当成子命令报 Unknown command)"
+  workaround: "source 后显式 S=\"$SESSION\"; 或 env 文件直接写 S=..."

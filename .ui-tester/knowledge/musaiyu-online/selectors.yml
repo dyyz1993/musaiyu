@@ -65,3 +65,14 @@ final_verdicts_20261030:
   shanbox_online: "PASS — 已连接(ok) + #myname=阿洲(修复✓) + #banner=等待玩家加入…(修复✓) + joined(chips 12,400)"
   pages_online: "PASS — 已连接(ok) + #myname=阿洲 + banner=等待玩家加入… + sock.connected=true (跨域通道经 CF Pages 反代可用)"
   pages_dashboard: "FAIL — 五卡全无数字(渲染为样式横杠非文本), 房间列表无行, console 每~1s 'refresh err TypeError: Failed to fetch' (8s 冷会话 8 条), 根因 ORIGIN 跨域 fetch 被 CORS 拦"
+
+# ===== v4 追加 (2026-10-30 CORS 双头修复终验: pages.dev dashboard) =====
+# Status: verified (2026-10-30: pages dashboard 热+冷双会话 PASS; shanbox 两页此前已 verified)
+# Version: 4
+
+pages_dashboard_v4_fixed:
+  verdict: "PASS — 五卡全数字: 活跃房间4(≥3)/在线玩家16/机器人15(≥15)/总局数持续增长(45→65→74→84)/总流水0; 房间列表 3 行 bot_*(对局中) + lobby(等人)"
+  api_actual_NOW: "dashboard ORIGIN 开关的绝对地址跨域 fetch 已通: 页面上下文 fetch('https://musaiyu.shanbox...:8443/musaiyu/api/stats') → 200 len=601"
+  fix_root: "CORS 双头修复: express 不再加 ACAO, 由 nginx 统一出单头 — curl -H 'Origin: https://musaiyu.pages.dev' 实测响应仅 1 条 access-control-allow-origin: *(修复前 express+nginx 各出一条, 浏览器拒收)"
+  console_errors_NOW: "0 条 'refresh err TypeError: Failed to fetch' (修复前每~1s 一条); 仅 3 条已知浏览器噪音 unhandledrejection NetworkError (见 patterns/loadtime_networkerror_noise)"
+  api_actual_BUG_history: "上条 pages_channel.api_actual_BUG (v3) 已于 2026-10-30 修复关闭, 条目保留作历史"
