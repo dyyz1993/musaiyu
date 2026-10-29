@@ -780,7 +780,8 @@ async function decisionLoop(deck){
     if(p.me){
       p.inTurn=true; S.phase="myturn"; renderSeats();
       const canDraw=p.cards.length<PRESET.maxCards;
-      setBanner(canDraw?"轮到你 · 过 或 补一张":"轮到你 · 过");
+      const preRaised = canDraw && S.raised.has(p.id);   // 举过手且没撤销 -> 直接补
+      setBanner(preRaised?"轮到你 · 已举手，直接补牌":(canDraw?"轮到你 · 过 或 补一张":"轮到你 · 过"));
       $("#btn-stop").disabled=false;
       renderHand();
       let done=false;
@@ -803,9 +804,18 @@ async function decisionLoop(deck){
         if(resolveTurn){ resolveTurn(act); resolveTurn=null; } };
       $("#btn-stop").onclick=()=>finish("pass");
       $("#btn-draw").onclick=()=>doDraw();
-      startRing(MY_TURN_SEC, ()=>{ setBanner("超时 · 自动过"); finish("pass"); }, "me");
-      await turnPromise;
-      renderSeats();
+      // 已举手: 轮到我时自动补牌, 不用再点
+      if(preRaised){
+        setBanner("你已举手，直接补牌");
+        await sleep(500);              // 给一点反馈时间
+        doDraw();
+        await turnPromise;
+        renderSeats();
+      }else{
+        startRing(MY_TURN_SEC, ()=>{ setBanner("超时 · 自动过"); finish("pass"); }, "me");
+        await turnPromise;
+        renderSeats();
+      }
     } else {
       p.inTurn=true; renderSeats();
       setBanner(`等待 ${p.name} 决策…`);
