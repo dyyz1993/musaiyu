@@ -528,11 +528,11 @@ function renderHand(popLast){
   me.cards.forEach((c,i)=>{
     h.insertAdjacentHTML("beforeend",`<div class="pcard${popLast&&i===me.cards.length-1?" pop":""}"><img src="${cardFaceSrc(c)}" alt=""></div>`);
   });
-  // 补牌位只在"可补且未补"时显示, 且做成可点(点了就补) —— 不补就保持 2 张
-  if(me.cards.length<PRESET.maxCards){
+  // 补牌位: 可点补牌(点了立即发牌到手里)。S.onDrawRequest 由决策阶段设置
+  if(me.cards.length<PRESET.maxCards && me.cards.length>=PRESET.startCards && (S.phase==="myturn" || S.phase==="decision" && !S.hideSlot)){
     h.insertAdjacentHTML("beforeend",`<div id="drawslot" role="button" aria-label="补一张"><span style="font-size:20px">+</span>补牌位</div>`);
     const slot=h.querySelector("#drawslot");
-    slot.onclick=()=>{ if(S.phase==="myturn"&&!S.drewThisTurn){ S.drewThisTurn=true; S.pendingDraw&&S.pendingDraw(); } };
+    slot.onclick=()=>{ if(typeof S.onDrawRequest==="function") S.onDrawRequest(); };
   }
   if(me.cards.length){
     const res=classifyHand(me.cards);
@@ -671,23 +671,32 @@ async function decisionLoop(deck){
   for(const p of S.players){
     if(p.cards.length>=PRESET.maxCards) continue;
     if(p.me){
-      p.inTurn=true; renderSeats();
+      p.inTurn=true; S.phase="myturn"; renderSeats();
       const canDraw=p.cards.length<PRESET.maxCards;
       setBanner(canDraw?"轮到你 · 过 或 补一张":"轮到你 · 过");
       $("#btn-stop").disabled=false; $("#btn-draw").disabled=!canDraw;
       $("#btn-draw").style.display=canDraw?"flex":"none";
       let done=false;
-      S.drewThisTurn=false;
-      S.pendingDraw=()=>{ if(done) return; p.cards.push(deck.pop()); renderHand(true); finish("draw"); };
-      const finish=(act)=>{ if(done) return; done=true; clearTimeout(ringTimer); stopRing(); S.pendingDraw=null;
+      // 补牌入口(补牌位 / 补一张按钮 共用)
+      const doDraw=()=>{
+        if(done||!canDraw) return;
+        done=true; clearTimeout(ringTimer); stopRing();
+        p.cards.push(deck.pop());
+        renderHand(true);
+        S.onDrawRequest=null; S.phase="decision";
+        p.inTurn=false; $("#btn-stop").disabled=true; $("#btn-draw").disabled=true;
+        renderSeats(); setBanner("你补了一张");
+      };
+      S.onDrawRequest=doDraw;
+      const finish=(act)=>{ if(done) return; done=true; clearTimeout(ringTimer); stopRing();
+        S.onDrawRequest=null; S.phase="decision";
         p.inTurn=false; $("#btn-stop").disabled=true; $("#btn-draw").disabled=true;
         $("#btn-draw").style.display="flex"; res(act); };
       const res=await new Promise(r=>{
         $("#btn-stop").onclick=()=>finish("pass");
-        $("#btn-draw").onclick=()=>finish("draw");
+        $("#btn-draw").onclick=()=>doDraw();
         startRing(MY_TURN_SEC, ()=>{ setBanner("超时 · 自动过"); finish("pass"); });
       });
-      if(res==="draw"){ if(p.cards.length<PRESET.maxCards){ p.cards.push(deck.pop()); renderHand(true);} }
       renderSeats();
     } else {
       p.inTurn=true; renderSeats();
@@ -704,6 +713,7 @@ async function decisionLoop(deck){
       p.inTurn=false; renderSeats();
     }
   }
+  S.phase="decision";
   reveal();
 }
 async function reveal(){
