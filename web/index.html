@@ -529,7 +529,7 @@ function renderHand(popLast){
     h.insertAdjacentHTML("beforeend",`<div class="pcard${popLast&&i===me.cards.length-1?" pop":""}"><img src="${cardFaceSrc(c)}" alt=""></div>`);
   });
   // 补牌位: 可点补牌(点了立即发牌到手里)。S.onDrawRequest 由决策阶段设置
-  if(me.cards.length<PRESET.maxCards && me.cards.length>=PRESET.startCards && (S.phase==="myturn" || S.phase==="decision" && !S.hideSlot)){
+  if(me.cards.length<PRESET.maxCards && me.cards.length>=PRESET.startCards && S.phase==="myturn"){
     h.insertAdjacentHTML("beforeend",`<div id="drawslot" role="button" aria-label="补一张"><span style="font-size:20px">+</span>补牌位</div>`);
     const slot=h.querySelector("#drawslot");
     slot.onclick=()=>{ if(typeof S.onDrawRequest==="function") S.onDrawRequest(); };
@@ -673,6 +673,7 @@ async function decisionLoop(deck){
     if(p.me){
       p.inTurn=true; S.phase="myturn"; renderSeats();
       const canDraw=p.cards.length<PRESET.maxCards;
+      renderHand();   // 进入我回合后重绘: 补牌位此时才显示
       setBanner(canDraw?"轮到你 · 过 或 补一张":"轮到你 · 过");
       $("#btn-stop").disabled=false; $("#btn-draw").disabled=!canDraw;
       $("#btn-draw").style.display=canDraw?"flex":"none";
