@@ -470,7 +470,7 @@ function renderSeats(){
     el.style.left=x+"%"; el.style.top=y+"%";
     const BRIGHT=["tianGong9","tianGong8","shuangGui","sanGui","zhenBaoZi","tongHuaShun","jiaBaoZi"];
     const rc=p.cards&&p.cards.length?classifyHand(p.cards):null;
-    const isBright=rcS&&BRIGHT.includes(rcS.type);
+    const isBright=rc&&BRIGHT.includes(rc.type);
     const backs=isBright
       ? `<span class="face-up">${p.cards.map(c=>`<span class="fc"><img src="${cardFaceSrc(c)}"></span>`).join("")}</span>`
       : (p.cards?p.cards.map(()=>'<div class="mcard"></div>').join(""):"");
