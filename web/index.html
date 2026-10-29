@@ -11,7 +11,7 @@
   --green-hi:#9fe6bf; --btn-draw:#F4C447;
 }
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-html,body{height:100%;background:radial-gradient(ellipse at 50% 40%,#0a4a32,#04150f 70%,#020a06);color:#fff;overflow:hidden;
+html,body{height:100%;background:radial-gradient(ellipse at 50% 40%,#0d5c3e,#073826 60%,#04241a);color:#fff;overflow:hidden;
   font-family:-apple-system,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif}
 #app{position:relative;margin:0 auto;height:100dvh;max-width:430px;width:100%;
   display:flex;flex-direction:column;background:#0a0a0c;overflow:hidden}
@@ -85,10 +85,30 @@ html,body{height:100%;background:radial-gradient(ellipse at 50% 40%,#0a4a32,#041
 #speclist.show{display:block}
 
 #mezone{flex:none;position:relative;z-index:5;padding:6px 14px 10px;
-  background:linear-gradient(180deg,rgba(3,10,7,0),rgba(3,10,7,.9) 30%)}
+  background:linear-gradient(180deg,rgba(4,30,20,.18),rgba(3,14,9,.62) 55%);
+  backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);
+  border-top:1px solid rgba(217,180,92,.28)}
 #meline{display:flex;align-items:center;gap:10px;margin-bottom:6px}
 #meavatar{width:42px;height:42px;border-radius:50%;flex:none;position:relative;
   border:2px solid var(--gold);background-size:cover;background-position:center}
+/* 倒计时进度环(围着按钮/头像走一圈) */
+.ring{position:absolute;border-radius:50%;pointer-events:none}
+.ringwrap{position:relative;width:52px;height:52px;flex:none}
+.ringwrap svg{position:absolute;inset:0;transform:rotate(-90deg)}
+.ringwrap .bgc{stroke:rgba(255,255,255,.12)}
+.ringwrap .fgc{stroke:var(--gold);stroke-linecap:round;transition:stroke-dashoffset .25s linear}
+.ringwrap .mid{position:absolute;inset:5px;border-radius:50%;background-size:cover;background-position:center}
+.ringwrap .ringtxt{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  font-size:13px;font-weight:800;color:var(--gold-hi);text-shadow:0 1px 4px #000}
+/* 亮牌(天公等大牌) */
+.face-up{display:flex;gap:2px}
+.face-up .fc{width:26px;height:37px;border-radius:3px;background:#fff;overflow:hidden;
+  box-shadow:0 0 0 1.5px rgba(217,180,92,.75), 0 2px 6px rgba(0,0,0,.55)}
+.face-up .fc img{width:100%;height:100%;display:block}
+.face-up .fc.pop{animation:pop .3s ease-out}
+.bright{animation:brightPulse 1.1s ease-in-out infinite alternate}
+@keyframes brightPulse{from{box-shadow:0 0 0 1.5px rgba(217,180,92,.5),0 0 6px rgba(242,206,120,.35)}
+to{box-shadow:0 0 0 2px rgba(242,206,120,.95),0 0 16px rgba(242,206,120,.8)}}
 #meavatar .bankerbadge{left:auto;right:-6px}
 #meinfo b{font-size:13px;font-weight:600;white-space:nowrap}
 #mechips{font-size:12px;color:#ffd97a;display:flex;align-items:center;gap:4px}
@@ -98,7 +118,7 @@ html,body{height:100%;background:radial-gradient(ellipse at 50% 40%,#0a4a32,#041
 #handinfo .t2{font-size:11px;color:#ffd97a}
 #hand{display:flex;justify-content:center;align-items:center;gap:10px;min-height:116px;margin-bottom:8px}
 .pcard{width:80px;height:114px;border-radius:8px;background:#fff;position:relative;
-  box-shadow:0 4px 10px rgba(0,0,0,.55);flex:none;overflow:hidden}
+  box-shadow:0 4px 10px rgba(0,0,0,.5), 0 0 0 1.5px rgba(217,180,92,.55);flex:none;overflow:hidden}
 .pcard img{width:100%;height:100%;display:block}
 .pcard.pop{animation:pop .3s ease-out}
 #drawslot{width:80px;height:114px;border-radius:8px;border:1.5px dashed rgba(255,255,255,.45);
@@ -109,7 +129,7 @@ html,body{height:100%;background:radial-gradient(ellipse at 50% 40%,#0a4a32,#041
   background-size:cover;background-position:center}
 .abtn:disabled{opacity:.4;filter:grayscale(.4);cursor:default}
 .abtn:not(:disabled):active{transform:translateY(1px)}
-#btn-stop{background-image:url(assets/btn-stop.png)}
+#btn-stop{background-image:url(assets/btn-pass.png)}
 #btn-draw{background-image:url(assets/btn-draw.png)}
 #home{height:18px;flex:none;display:flex;align-items:center;justify-content:center;background:#000}
 #home i{width:110px;height:5px;border-radius:3px;background:#3a3a3e}
@@ -162,7 +182,15 @@ html,body{height:100%;background:radial-gradient(ellipse at 50% 40%,#0a4a32,#041
   </div>
   <div id="mezone">
     <div id="meline">
-      <div id="meavatar"><span id="mebanker"></span></div>
+      <div class="ringwrap" id="myring" style="display:none">
+        <svg viewBox="0 0 52 52"><circle class="bgc" cx="26" cy="26" r="24" fill="none" stroke-width="3"/>
+        <circle class="fgc" id="myfgc" cx="26" cy="26" r="24" fill="none" stroke-width="3"
+          stroke-dasharray="150.8" stroke-dashoffset="0"/></svg>
+        <div class="mid" style="background-image:url('assets/avatars/avatar-m3.png')"></div>
+        <div class="ringtxt" id="myringtxt">15</div>
+        <span id="mebanker" style="position:absolute;right:-6px;bottom:2px"></span>
+      </div>
+      <div id="meavatar" style="display:none"><span id="mebanker2"></span></div>
       <div id="meinfo">
         <b>阿洲（我 · 庄底位）</b>
         <div id="mechips"><span class="chip-ic"></span><span id="mychips">12,400</span></div>
@@ -171,7 +199,7 @@ html,body{height:100%;background:radial-gradient(ellipse at 50% 40%,#0a4a32,#041
     </div>
     <div id="hand"><div id="drawslot"><span style="font-size:20px">+</span>补牌位</div></div>
     <div id="actions">
-      <button class="abtn" id="btn-stop" aria-label="停牌" disabled></button>
+      <button class="abtn" id="btn-stop" aria-label="过" disabled></button>
       <button class="abtn" id="btn-draw" aria-label="补一张" disabled></button>
     </div>
   </div>
@@ -402,6 +430,10 @@ const sleep=ms=>new Promise(r=>setTimeout(r, ms*SPEED));
 const $=s=>document.querySelector(s);
 const fmt=n=>n.toLocaleString("en-US");
 function seatEl(id){ return document.querySelector(`.seat[data-pid="${id}"]`); }
+function cardFaceSrc(c){
+  if(c.joker) return "assets/cards/"+(c.red?"J-1":"J-2")+".png";
+  return "assets/cards/"+c.suit+"-"+rankStr(c.rank)+".png";
+}
 function renderSeats(){
   const arena=$("#arena"); arena.innerHTML="";
   const opps=S.players.filter(p=>!p.me);
@@ -416,7 +448,12 @@ function renderSeats(){
     el.className="seat "+(vertical?"v":"h"+(left?" l":" r"))+(p.inTurn?" act":"")+(p.folded?" folded":"");
     el.dataset.pid=p.id;
     el.style.left=x+"%"; el.style.top=y+"%";
-    const backs=p.cards?p.cards.map(()=>'<div class="mcard"></div>').join(""):"";
+    const BRIGHT=["tianGong9","tianGong8","shuangGui","sanGui","zhenBaoZi","tongHuaShun","jiaBaoZi"];
+    const rc=p.cards&&p.cards.length?classifyHand(p.cards):null;
+    const isBright=rc&&BRIGHT.includes(rc.type);
+    const backs=isBright
+      ? `<span class="face-up">${p.cards.map(c=>`<span class="fc"><img src="${cardFaceSrc(c)}"></span>`).join("")}</span>`
+      : (p.cards?p.cards.map(()=>'<div class="mcard"></div>').join(""):"");
     el.innerHTML=`
       <div class="avwrap"><div class="avatar" style="background-image:url('${p.face}')"></div>
         ${p.banker?'<div class="bankerbadge"></div>':""}</div>
@@ -428,10 +465,6 @@ function renderSeats(){
     arena.appendChild(el);
   });
 }
-function cardFaceSrc(c){
-  if(c.joker) return "assets/cards/"+(c.red?"J-1":"J-2")+".png";
-  return "assets/cards/"+c.suit+"-"+rankStr(c.rank)+".png";
-}
 function renderHand(popLast){
   const me=S.players[S.myIdx];
   const h=$("#hand"); h.innerHTML="";
@@ -442,14 +475,17 @@ function renderHand(popLast){
   if(me.cards.length){
     const res=classifyHand(me.cards);
     const NAME={tianGong9:"天公 9",tianGong8:"天公 8",shuangGui:"双鬼",sanGui:"三鬼",zhenBaoZi:"豹子",tongHuaShun:"同花顺",jiaBaoZi:"假豹子",hunShun:"顺子",muShi:"木虱（0点）",normal:res.pts+" 点"};
-    $("#handinfo .t1").innerHTML=`当前 <b>${NAME[res.type]}</b>`;
+    const BRIGHT=["tianGong9","tianGong8","shuangGui","sanGui","zhenBaoZi","tongHuaShun","jiaBaoZi"];
+    const bright=BRIGHT.includes(res.type);
+    $("#handinfo .t1").innerHTML=`当前 <b>${NAME[res.type]}</b>${bright?' <span style="color:#ffd97a">✦亮牌</span>':''}`;
     $("#handinfo .t2").textContent=`倍率 ×${payoutMultiplier({...res,_cards:me.cards})}`;
-  } else { $("#handinfo .t1").textContent="—"; $("#handinfo .t2").textContent=""; }
+    $("#hand").classList.toggle("bright", bright);
+  } else { $("#handinfo .t1").textContent="—"; $("#handinfo .t2").textContent=""; $("#hand").classList.remove("bright"); }
 }
 function renderMe(){
   const me=S.players[S.myIdx];
   $("#mychips").textContent=fmt(me.chips);
-  $("#mebanker").innerHTML=me.banker?'<div class="bankerbadge"></div>':"";
+  const mb=$("#mebanker"); if(mb) mb.innerHTML=me.banker?'<div class="bankerbadge"></div>':"";
 }
 function renderTop(){
   $("#roominfo").textContent=`房号 882010 · 第 ${S.round} 局 · 底注 ${S.ante} · 池底 ${fmt(S.pot)}`;
@@ -457,6 +493,30 @@ function renderTop(){
 }
 function renderAll(){ renderSeats(); renderHand(); renderMe(); renderTop(); }
 function setBanner(html){ $("#banner").innerHTML=`<b>${html}</b>`; }
+const RING_C=2*Math.PI*24;
+function startRing(sec,onEnd){
+  const wrap=$("#myring"), fgc=$("#myfgc"), txt=$("#myringtxt");
+  if(!wrap) return;
+  wrap.style.display="block"; $("#meavatar").style.display="none";
+  const t0=Date.now();
+  fgc.setAttribute("stroke-dasharray", RING_C);
+  const tick=()=>{
+    const left=Math.max(0, sec-(Date.now()-t0)/1000);
+    fgc.setAttribute("stroke-dashoffset", RING_C*(1-left/sec));
+    txt.textContent=Math.ceil(left);
+    if(left<=0){ wrap.style.display="none"; $("#meavatar").style.display="flex"; onEnd&&onEnd(); return; }
+    ringTimer=setTimeout(tick,100);
+  };
+  clearTimeout(ringTimer); tick();
+}
+function stopRing(){
+  clearTimeout(ringTimer);
+  const wrap=$("#myring");
+  if(wrap) wrap.style.display="none";
+  const ma=$("#meavatar"); if(ma) ma.style.display="flex";
+}
+let ringTimer=null;
+const MY_TURN_SEC=15, AI_TURN_SEC=5;
 function floaty(text,cls){
   const f=document.createElement("div"); f.className="floaty "+cls; f.textContent=text;
   $("#app").appendChild(f); setTimeout(()=>f.remove(),1700);
@@ -550,22 +610,30 @@ async function decisionLoop(deck){
     if(p.cards.length>=3) continue;
     if(p.me){
       p.inTurn=true; renderSeats();
-      setBanner("轮到你 · 停牌或补一张");
+      setBanner("轮到你 · 过 或 补一张");
       $("#btn-stop").disabled=false; $("#btn-draw").disabled=false;
-      await new Promise(res=>{
-        $("#btn-stop").onclick=()=>{p.inTurn=false;$("#btn-stop").disabled=true;$("#btn-draw").disabled=true;res("stop");};
-        $("#btn-draw").onclick=()=>{p.inTurn=false;$("#btn-stop").disabled=true;$("#btn-draw").disabled=true;res("draw");};
-      }).then(act=>{ if(act==="draw"){ p.cards.push(deck.pop()); renderHand(true);} renderSeats(); });
+      let done=false;
+      const finish=(act)=>{ if(done) return; done=true; clearTimeout(ringTimer); stopRing();
+        p.inTurn=false; $("#btn-stop").disabled=true; $("#btn-draw").disabled=true; res(act); };
+      const res=await new Promise(r=>{
+        $("#btn-stop").onclick=()=>finish("pass");
+        $("#btn-draw").onclick=()=>finish("draw");
+        startRing(MY_TURN_SEC, ()=>{ setBanner("超时 · 自动过"); finish("pass"); });
+      });
+      if(res==="draw"){ p.cards.push(deck.pop()); renderHand(true); }
+      renderSeats();
     } else {
       p.inTurn=true; renderSeats();
       setBanner(`等待 ${p.name} 决策…`);
-      await sleep(750);
+      startRing(AI_TURN_SEC, ()=>{});
+      await sleep(AI_TURN_SEC*1000*0.72);
+      stopRing();
       const r=classifyHand(p.cards);
       const good=["tianGong9","tianGong8","shuangGui","sanGui","zhenBaoZi","tongHuaShun","hunShun"].includes(r.type)||r.pts>=7;
       if(!good&&p.cards.length<3&&Math.random()<0.8){
         p.cards.push(deck.pop());
         setBanner(`${p.name} 补了一张`); renderSeats(); await sleep(600);
-      } else { setBanner(`${p.name} 停牌`); renderSeats(); await sleep(450); }
+      } else { setBanner(`${p.name} 过`); renderSeats(); await sleep(450); }
       p.inTurn=false; renderSeats();
     }
   }
