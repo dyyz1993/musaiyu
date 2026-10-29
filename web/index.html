@@ -336,16 +336,19 @@ function payoutMultiplier(res){
 /* ---------- 引擎 4: settleRound —— 全员互比逐对结算（冻结: 净输赢=底注×倍率, 平局0） ---------- */
 function settleRound(players){
   const ledger=Object.fromEntries(players.map(p=>[p.id,0]));
+  // 可支付余额随结算递减: 一人连输多对时累计扣款不超过其余额(审查二轮修复)
+  const avail=Object.fromEntries(players.map(p=>[p.id,p.chips]));
   const pairs=[];
   for(let i=0;i<players.length;i++)for(let j=i+1;j<players.length;j++){
     const P=players[i],Q=players[j];
     const {r,a,b}=compareHands(P.cards,Q.cards);
-    if(r===0){pairs.push({w:null,p1:P,p2:Q,mult:0});continue;}
+    if(r===0){pairs.push({w:null,p1:P,p2:Q,mult:0,paid:0});continue;}
     const W=r>0?P:Q, L=r>0?Q:P;
     const Wr=classifyHand(W.cards);
     const mult=payoutMultiplier({...Wr,_cards:W.cards});
-    // 封顶赔付: 实际转账不超过输家可支付余额, 赢加=输减, 禁止负数
-    const delta=Math.min(W.stake*mult, Math.max(0,L.chips));
+    // 封顶赔付: 实际转账不超过输家当前可支付余额, 赢加=输减, 禁止负数
+    const delta=Math.min(W.stake*mult, Math.max(0,avail[L.id]));
+    avail[L.id]-=delta; avail[W.id]+=delta;
     ledger[W.id]+=delta; ledger[L.id]-=delta;
     pairs.push({w:W.id,p1:P,p2:Q,mult,winType:Wr.type,paid:delta});
   }
@@ -378,7 +381,17 @@ function selfTest(){
   eq("对子天公8 ×2", payoutMultiplier({...classifyHand([C("♠",4),C("♥",4)]),_cards:[C("♠",4),C("♥",4)]}), 2);
   eq("含鬼豹子→假豹子6", classifyHand([C("♠",9),C("♥",9),J(true)]).type, "jiaBaoZi");
   eq("假豹子倍率6", payoutMultiplier({...classifyHand([C("♠",9),C("♥",9),J(true)]),_cards:[C("♠",9),C("♥",9),J(true)]}), 6);
-  eq("封顶赔付不产生负数", (()=>{const ps=[{id:"a",cards:[C("♠",4),C("♥",5)],stake:1000,chips:300},{id:"b",cards:[J(true),J(false)],stake:1000,chips:5000}];const {ledger}=settleRound(ps);return ledger.b<=5000&&ledger.a===-ledger.b&&ps.every(p=>ledger[p.id]>=-p.chips||true)?[ledger.a,ledger.b].every(v=>Math.abs(v)<=5000)&&ledger.a+ledger.b===0:false;})(), true);
+  eq("封顶赔付: 连输多对累计不超余额且守恒", (()=>{
+    const ps=[{id:"a",cards:[C("♠",3),C("♥",7)],stake:1000,chips:300},
+              {id:"b",cards:[C("♠",4),C("♥",5)],stake:1000,chips:5000},
+              {id:"c",cards:[C("♣",6),C("♦",6)],stake:1000,chips:5000}];
+    const {ledger}=settleRound(ps);
+    const zeroSum=ledger.a+ledger.b+ledger.c===0;
+    const noNeg=Object.entries(ledger).every(([id,v])=>v>=-({a:300,b:5000,c:5000})[id]);
+    // a 连输两对: 第1对封顶付300, 第2对余额0付0; b 还赢 c 一对 1000
+    const capped=ledger.a===-300&&ledger.b===1300&&ledger.c===-1000;
+    return zeroSum&&noNeg&&capped;
+  })(), true);
   return t;
 }
 window.__selfTest=selfTest;
