@@ -749,20 +749,22 @@ function settle(){
   floaty((net>=0?"+":"")+fmt(net), net>=0?"plus":"minus");
   setBanner(`本局结算 · 我 ${net>=0?"+":""}${fmt(net)}`);
 
-  // 对阵数据: Map "i_j" -> 金额(行视角), "i_j" -> 牌型
+  // 对阵数据: Map "idA_idB" -> A 在与 B 这对中的金额(正=赢), "idA_idB" -> 赢方牌型
   const ps=S.players, n=ps.length;
   const cell=new Map(), wtype=new Map();
   const key=(a,b)=>a+"_"+b;
   for(const pr of pairs){
-    const i=ps.indexOf(pr.p1), j=ps.indexOf(pr.p2);
-    if(!pr.w){ cell.set(key(i,j),0); cell.set(key(j,i),0); wtype.set(key(i,j),"tie"); continue; }
-    const wi=ps.findIndex(p=>p.id===pr.w);
+    if(!pr.w){ cell.set(key(pr.p1.id,pr.p2.id),0); cell.set(key(pr.p2.id,pr.p1.id),0);
+               wtype.set(key(pr.p1.id,pr.p2.id),"tie"); continue; }
+    const winnerId=pr.w;
+    const loserId=(pr.p1.id===pr.w)? pr.p2.id : pr.p1.id;
     const amt=pr.paid||0;
-    const loser=(pr.p1.id===pr.w)? j : i, winner=(pr.p1.id===pr.w)? i : j;
-    cell.set(key(winner,loser), amt);
-    cell.set(key(loser,winner), -amt);
-    wtype.set(key(winner,loser), pr.winType);
+    cell.set(key(winnerId,loserId), amt);
+    cell.set(key(loserId,winnerId), -amt);
+    wtype.set(key(winnerId,loserId), pr.winType);
   }
+  // 玩家顺序: 其他人在前, 我在最后 -> 内容落在左下三角, 我的行最长且在底部
+  const order=ps.filter(p=>!p.me).concat(ps.filter(p=>p.me));
   const TN={tianGong9:"天公9",tianGong8:"天公8",shuangGui:"双鬼",sanGui:"三鬼",zhenBaoZi:"豹子",
     tongHuaShun:"同花顺",jiaBaoZi:"假豹子",hunShun:"顺子",muShi:"木虱",normal:"普通"};
   const mini=c=>`<span class="hc"><img src="${cardFaceSrc(c)}"></span>`;
@@ -783,9 +785,9 @@ function settle(){
   }).join("");
 
   /* ---- 视图2: 我的对局(只看我跟每个人的那对) ---- */
-  const myPairs=ps.map((q,j)=>({q,j})).filter(o=>o.j!==S.myIdx).map(({q,j})=>{
-    const v=cell.get(key(S.myIdx,j))||0;
-    const wt=(v>0)? wtype.get(key(S.myIdx,j)) : (v<0? wtype.get(key(j,S.myIdx)) : "tie");
+  const myPairs=ps.filter(q=>!q.me).map(q=>{
+    const v=cell.get(key(S.myIdx,q.id))||0;
+    const wt=(v>0)? wtype.get(key(S.myIdx,q.id)) : (v<0? wtype.get(key(q.id,S.myIdx)) : "tie");
     const winCards = v>0? me.cards : q.cards;
     const res=v>0? "胜" : v<0? "负" : "平";
     return `<div class="mmrow">
@@ -806,16 +808,16 @@ function settle(){
   }).join("");
 
   /* ---- 视图3: 对阵表(上三角, 每对一次) ---- */
-  const head=ps.map(p=>{ const nv=ledger[p.id]||0;
+  const head=order.map(p=>{ const nv=ledger[p.id]||0;
     return `<th class="${p.me?"meh":""}"><div class="hname">${p.name}</div>
     <div class="hcards">${cardsOf(p)}</div>
     <div class="hsub ${nv>=0?"pos":"neg"}">${nv>=0?"+":""}${fmt(nv)}</div></th>`;}).join("");
-  const body=ps.map((p,i)=>{
-    const cells=ps.map((q,j)=>{
-      if(i===j||j<i) return `<td class="diag"></td>`;
-      const v=cell.get(key(i,j))||0;
+  const body=order.map((p,i)=>{
+    const cells=order.map((q,j)=>{
+      if(j>=i) return `<td class="diag"></td>`;          // 上三角留空 -> 内容在左下
+      const v=cell.get(key(p.id,q.id))||0;
       if(v===0) return `<td class="tie">平</td>`;
-      const wt=wtype.get(key(i,j))||"";
+      const wt=wtype.get(key(p.id,q.id))||"";
       return `<td class="${v>0?"win":"lose"}" title="${TN[wt]||wt}">${v>0?"+":""}${fmt(v)}</td>`;
     }).join("");
     return `<tr class="${p.me?"me":""}"><th class="rowh"><div class="hname">${p.name}</div><div class="hcards">${cardsOf(p)}</div></th>${cells}</tr>`;
@@ -825,7 +827,7 @@ function settle(){
     rank:`<div class="lbhead"></div>${viewRank}`,
     mine: myPairs,
     matrix:`<div class="mxwrap"><table class="mx"><thead><tr><th></th>${head}</tr></thead><tbody>${body}</tbody></table></div>
-      <div class="mxtitle">上三角显示，每对只出现一次；点格子看牌型</div>`
+      <div class="mxtitle">左下三角显示，每对只出现一次；最后一行是我</div>`
   };
   $("#overlay").classList.add("show");
   $("#panelbox").innerHTML=`<h3>第 ${S.round} 局 · 结算</h3>
