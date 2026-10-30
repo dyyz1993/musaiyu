@@ -61,6 +61,24 @@ app.get('/api/rooms/:roomId', (req, res) => {
     players: room.players.map(p => ({ pid: p.pid, name: p.name, chips: p.chips, cards: p.cards, banker: p.banker, isBot: p.isBot })) });
 });
 
+/* 对账端点：全场筹码恒等式 —— 结算净转移和恒为 0；任何偏差即资金 bug（须在 rooms 声明之后注册） */
+app.get('/api/audit', (req, res) => {
+  const list = [...rooms.values()].map(r => {
+    const sum = r.players.reduce((s, p) => s + p.chips, 0);
+    return { roomId: r.id, phase: r.phase, round: r.round, ante: r.ante,
+      players: r.players.length, chips: sum, turnover: r.stats.turnover, paid: r.stats.paid, net: r.stats.net };
+  });
+  res.json({
+    rooms: list,
+    totalChips: list.reduce((s, r) => s + r.chips, 0),
+    totalNet: list.reduce((s, r) => s + r.net, 0),           // 结算净转移和，恒等式要求 = 0
+    totalTurnover: list.reduce((s, r) => s + r.turnover, 0),
+    totalPaid: list.reduce((s, r) => s + r.paid, 0),
+    mem: process.memoryUsage(), roomsCapacity: list.length,
+    uptime: Math.round(process.uptime()),
+  });
+});
+
 /* ==================== 常量 ==================== */
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const BOT_NAMES = ["阿强","阿龙","丽姐","小敏","阿凯","老王","阿芳","阿杰","阿宝","阿海","阿坤",
@@ -292,6 +310,15 @@ function nextRound(room) {
 /* ==================== Socket 事件 ==================== */
 io.on('connection', (sock) => {
   sock.on('join_room', ({ roomId, name, face, botCount, bot, ante }) => {
+    // 单连接单座：已在别的房坐着，先按离场处理（换桌语义）
+    for (const r of rooms.values()) {
+      const prev = r.players.find(x => x.sid === sock.id);
+      if (prev) {
+        if (r.phase === 'waiting') r.removePlayer(prev.pid);
+        else { prev.folded = true; prev.stake = 0; prev.sid = null; }
+        broadcast(r, 'room_state', publicState(r));
+      }
+    }
     sock.join(roomId);
     let room = rooms.get(roomId);
     if (!room) {
@@ -350,12 +377,17 @@ io.on('connection', (sock) => {
   });
   sock.on('toggle_raise', ({ roomId, pid }) => {
     const room = rooms.get(roomId); if (!room) return;
+    const p = room.findPlayer(pid);
+    if (!p || p.sid !== sock.id) return;   // 举手也只限本人
     if (room.raised.has(pid)) room.raised.delete(pid); else room.raised.add(pid);
     broadcast(room, 'raise_update', { pid, raised: room.raised.has(pid) });
     broadcast(room, 'room_state', publicState(room));
   });
   sock.on('player_action', ({ roomId, pid, action }) => {
-    const room = rooms.get(roomId); if (room) playerAction(room, pid, action, false);
+    const room = rooms.get(roomId); if (!room) return;
+    const p = room.findPlayer(pid);
+    if (!p || p.sid !== sock.id) return;   // 只能动自己的牌（防替他人出牌）
+    playerAction(room, pid, action, false);
   });
   sock.on('leave_room', ({ roomId, pid }) => {
     // 优雅离场：等待中直接摘座；局中标记坐出（不参决策/不结算），座位释放
@@ -375,7 +407,14 @@ io.on('connection', (sock) => {
   sock.on('reconnect_player', ({ roomId, pid }) => {
     const room = rooms.get(roomId);
     const p = room && room.findPlayer(pid);
-    if (p) { p.sid = sock.id; sock.join(roomId); sock.emit('rejoined', { state: publicState(room) }); }
+    if (!p) return;
+    // 防劫持：座位已被其他活跃连接占着（pid 是别人的），拒绝认领
+    if (p.sid && p.sid !== sock.id) return;
+    // 单连接单座：该连接已坐在同房别的座位上，不能重复认领
+    if (room.players.find(x => x !== p && x.sid === sock.id)) return;
+    p.sid = sock.id; sock.join(roomId);
+    // 完整恢复：座位上下文 + 私牌 + 阶段，客户端拿到即可无缝续玩
+    sock.emit('rejoined', { state: publicState(room), pid, myCards: p.cards, phase: room.phase });
   });
 });
 

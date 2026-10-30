@@ -64,6 +64,19 @@ function newIdentity() {
 
 const DBG = !!process.env.MUY_DBG;
 const dlog = (...a) => { if (DBG) log('[dbg]', ...a); };
+const fs = require('fs');
+/* 行为轨迹：每 bot 一行 JSON（事件+时间点+筹码前后），审计器(bot/audit.js)回放对账 */
+const TRAJ_DIR = process.env.MUY_TRAJ_DIR || path.join(__dirname, 'trajectories');
+fs.mkdirSync(TRAJ_DIR, { recursive: true });
+const trajFiles = new Map();
+function track(idName, ev, data = {}) {
+  try {
+    let f = trajFiles.get(idName);
+    if (!f) { f = path.join(TRAJ_DIR, `${idName}.jsonl`); trajFiles.set(idName, f); }
+    fs.appendFileSync(f, JSON.stringify({ t: Date.now(), ev, ...data }) + '\n');
+  } catch (e) {}
+}
+function idsess(s) { return `${s.identity.name}|${s.myPid || 'x'}|${Date.now() % 86400000}`; }
 
 class Session {
   constructor(opts = {}) {
@@ -74,8 +87,14 @@ class Session {
     this.myCards = [];
     this.chips = null;
     this.done = false; this.seated = false;
+    this.tid = `${this.identity.name}-${Date.now().toString(36)}-${Math.floor(Math.random()*999)}`;
     stats.active++;
+    this.track('spawn', { room: this.roomHint?.roomId, pid: this.myPid, chips: this.chips });
     this.open();
+  }
+
+  track(ev, data = {}) {
+    track(this.tid, ev, { name: this.identity.name, pid: this.myPid, room: this.room, chips: this.chips, ...data });
   }
 
   open() {
@@ -93,13 +112,14 @@ class Session {
     s.on('connect_error', () => { stats.connectErr++; });
     s.on('disconnect', () => { if (!this.done) { /* 非自愿断线（服务重启/硬断）按掉线离场，走统一善后 */ this.finish('abrupt'); } });
     s.on('rejoined', d => { this.mode = null; this.seated = true; stats.seated++; this.adopt(d.state); this.armDwell(); });
-    s.on('joined', d => { dlog(`joined ${this.identity.name} pid=${d.pid} 房=${d.roomId}`); this.myPid = d.pid; this.room = d.roomId; this.seated = true; stats.seated++; this.adopt(d.state); this.armDwell(); });
-    s.on('spectator', () => { dlog(`spectator ${this.identity.name}`); this.leave(true); });            // 房满了，换个地方
+    s.on('joined', d => { dlog(`joined ${this.identity.name} pid=${d.pid} 房=${d.roomId}`); this.myPid = d.pid; this.room = d.roomId; this.seated = true; stats.seated++; this.adopt(d.state); this.track('joined'); this.armDwell(); });
+    s.on('spectator', () => { dlog(`spectator ${this.identity.name}`); this.track('spectator'); this.leave(true); });            // 房满了，换个地方
     s.on('room_rejected', d => { log(`拒入: ${d?.reason || ''}`); this.leave(true); });
     s.on('your_cards', d => { this.myCards = d.cards || []; });
     s.on('decision_turn', d => { dlog(`decision_turn ${d.name} pid=${d.pid} 我=${this.myPid}`); if (d.pid === this.myPid) this.act(); });
     s.on('round_start', () => { this.myCards = []; if (Math.random() < 0.15) setTimeout(() => this.safeEmit('toggle_raise', { roomId: this.room, pid: this.myPid }), 300 + Math.random() * 1200); });
-    s.on('room_state', st => { const me = st.players.find(p => p.pid === this.myPid); if (me) this.chips = me.chips; });
+    s.on('room_state', st => { const me = st.players.find(p => p.pid === this.myPid); if (me && me.chips !== this.chips) { this.track('chips', { from: this.chips, to: me.chips }); this.chips = me.chips; } });
+    s.on('settle_result', d => { const net = (d.net || {})[this.myPid]; if (net !== undefined) this.track('settle', { net }); });
   }
 
   adopt(state) {
@@ -141,6 +161,7 @@ class Session {
     setTimeout(() => {
       if (!this.sock.connected) return;
       dlog(`出牌 ${this.identity.name} → ${action}`);
+      this.track('action', { action, cards: this.myCards.length });
       this.safeEmit('player_action', { roomId: this.room, pid: this.myPid, action });
       stats.actions++;
     }, delay);
@@ -159,12 +180,13 @@ class Session {
     stats.active--; stats.exits++;
     if (kind === 'graceful') stats.graceful++; else stats.abrupt++;
     if (this.seated) { stats.seated--; this.seated = false; }
+    this.track('leave', { kind });
     try {
       if (kind === 'abrupt' && this.sock.io.engine && this.sock.io.engine.close) this.sock.io.engine.close();
       else this.sock.disconnect();
     } catch (e) { try { this.sock.disconnect(); } catch (e2) {} }
     const bankrupt = this.chips !== null && this.chips < BANKRUPT;
-    if (bankrupt) log(`${this.identity.name} 破产(筹码${this.chips}) → 换新号`);
+    if (bankrupt) { log(`${this.identity.name} 破产(筹码${this.chips}) → 换新号`); this.track('bankrupt'); }
     const gap = rand(REGAP);
     setTimeout(() => {
       stats.reentries++;
