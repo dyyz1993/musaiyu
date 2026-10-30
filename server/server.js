@@ -9,6 +9,9 @@ const E = require('./engine.js');
 const PORT = process.env.PORT || 3010;
 const MY_TURN_SEC = 15, AI_TURN_SEC = 5;
 const BOT_ROOM_COUNT = 10, BOTS_PER_ROOM = 8;
+const ROOM_CAP = +process.env.ROOM_CAP || 8;                 // 真人房上限（不含 bot 自嗨房与大厅）
+const ROOM_EMPTY_MS = +process.env.ROOM_EMPTY_MS || 5*60*1000; // 最后一个真人走后多久销毁
+const SWEEP_MS = +process.env.SWEEP_MS || 60*1000;
 
 const app = express();
 const httpServer = http.createServer(app);
@@ -123,6 +126,31 @@ class Room {
     return seq.slice(bi + 1).concat(seq.slice(0, bi + 1));
   }
 }
+
+/* ==================== 房间生命周期：上限 + 空房回收 ==================== */
+function humanRoomCount() {
+  return [...rooms.values()].filter(r => !r.id.startsWith('bot_') && r.id !== 'lobby').length;
+}
+function liveHumans(room) {
+  return room.players.filter(p => !p.isBot && p.sid).length;
+}
+function destroyRoom(room) {
+  for (const t of Object.values(room.timers)) clearTimeout(t.timeout);
+  if (room._startTimer) { clearTimeout(room._startTimer); delete room._startTimer; }
+  rooms.delete(room.id);
+  console.log(`[room] 空房回收: ${room.id}`);
+}
+setInterval(() => {
+  const now = Date.now();
+  for (const room of [...rooms.values()]) {
+    if (room.id.startsWith('bot_') || room.id === 'lobby') continue;
+    const liveSockets = io.sockets.adapter.rooms.get(room.id)?.size || 0;
+    const empty = liveHumans(room) === 0 && liveSockets === 0;
+    if (!empty) { room.emptySince = 0; continue; }
+    if (!room.emptySince) room.emptySince = now;
+    else if (now - room.emptySince >= ROOM_EMPTY_MS) destroyRoom(room);
+  }
+}, SWEEP_MS).unref();
 
 /* ==================== 广播 ==================== */
 function broadcast(room, event, data) { io.to(room.id).emit(event, data); }
@@ -303,7 +331,13 @@ io.on('connection', (sock) => {
   sock.on('join_room', ({ roomId, name, face, botCount }) => {
     sock.join(roomId);
     let room = rooms.get(roomId);
-    if (!room) { room = new Room(roomId, { ante: 200, maxPlayers: 9 }); rooms.set(roomId, room); }
+    if (!room) {
+      if (roomId !== 'lobby' && humanRoomCount() >= ROOM_CAP) {
+        sock.emit('room_rejected', { reason: `房间数已达上限（${ROOM_CAP} 间），请稍后再试` });
+        return;
+      }
+      room = new Room(roomId, { ante: 200, maxPlayers: 9 }); rooms.set(roomId, room);
+    }
     if (room.phase === 'waiting' && !room.isFull()) {
       // 同名续档：同名字真人复用旧座位（页面刷新/服务重启后筹码不重开）
       let p = room.players.find(x => !x.isBot && x.name === (name || '玩家'));
@@ -322,6 +356,10 @@ io.on('connection', (sock) => {
     } else { room.spectators.add(sock.id); sock.emit('spectator', { roomId, state: publicState(room) }); }
   });
   sock.on('create_room', ({ name, face, botCount, ante, maxPlayers }) => {
+    if (humanRoomCount() >= ROOM_CAP) {
+      sock.emit('room_rejected', { reason: `房间数已达上限（${ROOM_CAP} 间），请稍后再试` });
+      return;
+    }
     const roomId = 'R' + Date.now().toString(36);
     sock.join(roomId);
     const room = new Room(roomId, { ante, maxPlayers: maxPlayers || 9 });

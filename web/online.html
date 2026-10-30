@@ -380,6 +380,7 @@ function connect(){
   sock.on("spectator",d=>{ S.myPid=null; S.roomId=d.roomId; applyState(d.state); setBanner("围观模式 · 本桌已满员"); });
   sock.on("rejoined",d=>{ applyState(d.state); setBanner(d.state.phase==="waiting"?"等待玩家加入…":"已重新接入对局"); });
   sock.on("room_created",d=>{ S.myPid=d.pid; S.roomId=d.roomId; applyState(d.state); setBanner("房间已创建 · 等待玩家加入…"); });
+  sock.on("room_rejected",d=>{ setBanner(d.reason||"无法加入房间"); $("#conn").textContent="满员"; });
   sock.on("room_state",d=>applyState(d));
   sock.on("phase",d=>{ S.phase=d.phase; });
   sock.on("round_start",d=>{
