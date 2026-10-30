@@ -22,19 +22,26 @@ h1{margin:0;font-size:22px;color:var(--gold)}
 .stat .label{font-size:12px;color:#9db8a8}
 .stat .value{font-size:26px;font-weight:800;margin-top:4px;font-variant-numeric:tabular-nums}
 .green{color:var(--green)} .gold{color:var(--gold)}
-.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;min-width:0}
 .card.full{grid-column:1/-1}
 .card h2{margin:0 0 10px;font-size:15px;color:var(--gold);font-weight:700}
-canvas{max-height:260px}
+canvas{max-height:250px}
+/* 资金面板 */
+.money-row{display:flex;justify-content:space-between;align-items:baseline;padding:9px 0;border-bottom:1px solid #0d2f22}
+.money-row:last-child{border-bottom:0}
+.money-row .k{font-size:13px;color:#9db8a8}
+.money-row .v{font-size:22px;font-weight:800;font-variant-numeric:tabular-nums}
+.zcheck{margin-top:10px;padding:10px 12px;border-radius:8px;background:#0d3222;border:1px solid #1d4634;
+  display:flex;justify-content:space-between;align-items:center;font-size:13px}
+.zcheck .ok{color:var(--green);font-weight:700;font-size:15px}
+.zcheck .bad{color:var(--red);font-weight:700;font-size:15px}
 table{width:100%;border-collapse:collapse;font-size:13px}
 th{color:#9db8a8;font-weight:600;text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)}
 td{padding:7px 8px;border-bottom:1px solid #0d2f22;font-variant-numeric:tabular-nums}
 .badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;background:#123b2b;color:#cfe8d8}
 .b-play{background:#123b2b;color:var(--green)} .b-wait{background:#3b3212;color:var(--gold)}
-.pbar{height:5px;border-radius:3px;background:#0d2f22;min-width:70px;overflow:hidden}
-.pbar i{display:block;height:100%;border-radius:3px;background:linear-gradient(90deg,#2e8b57,var(--gold))}
-#event-log{max-height:230px;overflow-y:auto;font-size:12.5px;font-family:ui-monospace,Menlo,monospace;line-height:1.8}
+#event-log{max-height:220px;overflow-y:auto;font-size:12.5px;font-family:ui-monospace,Menlo,monospace;line-height:1.8}
 #event-log .t{color:#6f8f7e;margin-right:6px}
 .up{color:var(--green)} .down{color:var(--red)}
 @media(max-width:760px){.grid{grid-template-columns:1fr}}
@@ -56,13 +63,20 @@ td{padding:7px 8px;border-bottom:1px solid #0d2f22;font-variant-numeric:tabular-
 </div>
 
 <div class="grid">
-  <div class="card full"><h2>💰 各房间资金走势（实时累计）</h2><canvas id="money-chart" height="110"></canvas></div>
-  <div class="card"><h2>📊 各房流水对比</h2><canvas id="turnover-chart" height="150"></canvas></div>
-  <div class="card"><h2>📈 实时事件流（结算 / 筹码变动）</h2><div id="event-log"></div></div>
-  <div class="card full"><h2>🀄 房间列表与进度</h2>
-    <table><thead><tr><th>房间</th><th>状态</th><th>局数</th><th>在线</th><th>真人</th><th>bot</th><th>底注</th><th>流水进度</th><th>流水</th></tr></thead>
-    <tbody id="roomlist"><tr><td colspan="9">加载中…</td></tr></tbody></table>
+  <div class="card"><h2>🥧 房间状态分布</h2><canvas id="phase-chart"></canvas></div>
+  <div class="card"><h2>💵 资金 入 / 出</h2>
+    <div class="money-row"><span class="k">入 · 累计底注（下注流水）</span><span class="v gold" id="m-in">--</span></div>
+    <div class="money-row"><span class="k">出 · 累计派彩（赢家所得）</span><span class="v green" id="m-out">--</span></div>
+    <div class="zcheck"><span>零和校验 · 全部结算输赢相抵</span><span id="m-zero">--</span></div>
+    <div class="money-row" style="margin-top:6px"><span class="k">全场筹码总量（结算只转移不增减）</span><span class="v" id="m-chips" style="font-size:17px">--</span></div>
   </div>
+</div>
+
+<div class="card full" style="margin-bottom:12px"><h2>📈 实时事件流（结算 / 筹码变动）</h2><div id="event-log"></div></div>
+
+<div class="card full"><h2>🀄 房间列表</h2>
+  <table><thead><tr><th>房间</th><th>状态</th><th>局数</th><th>在线</th><th>真人</th><th>bot</th><th>底注</th><th>流水</th><th>派彩</th></tr></thead>
+  <tbody id="roomlist"><tr><td colspan="9">加载中…</td></tr></tbody></table>
 </div>
 
 <script>
@@ -70,13 +84,12 @@ const API = window.location.hostname.includes("pages.dev")
   ? "https://musaiyu.shanbox.19930810.xyz:8443/musaiyu"
   : "/musaiyu";
 const POLL_MS = 5000;
-const PALETTE = ["#f2ce78","#5ed982","#6fb3ff","#ff9f6f","#d78cf2","#5adcd8","#f2789f","#b8e05a","#ffa94d","#7f9cf5"];
+const PHASE_COLORS = { playing:"#5ed982", waiting:"#f2ce78", dealing:"#6fb3ff", decision:"#ffa94d", reveal:"#d78cf2", settle:"#f2789f", betting_confirm:"#5adcd8" };
+const phaseMap = { waiting:"等人", dealing:"发牌", decision:"决策", reveal:"摊牌", settle:"结算", playing:"对局中", betting_confirm:"下注" };
 
-let moneyChart = null, turnoverChart = null;
-const trendLabels = [];                     // 时间轴
-const trendData = {};                       // roomId -> [sumChips,...]
-const lastPlayers = {};                     // `${roomId}|${pid}` -> chips（事件流差分）
-const lastRounds = {};                      // roomId -> round
+let phaseChart = null;
+const lastPlayers = {};   // `${roomId}|${pid}` -> chips（事件差分）
+const lastRounds = {};    // roomId -> round
 const events = [];
 
 function fmt(n){ return (n??0).toLocaleString("en-US"); }
@@ -87,18 +100,13 @@ function addEvent(html){
   document.getElementById("event-log").innerHTML = events.join("<br>");
 }
 
-function initCharts(){
-  const mc = document.getElementById("money-chart").getContext("2d");
-  moneyChart = new Chart(mc, { type:"line", data:{ labels:[], datasets:[] },
-    options:{ animation:false, responsive:true, maintainAspectRatio:true,
-      plugins:{ legend:{ labels:{ color:"#cfe8d8", boxWidth:12, font:{size:11} } } },
-      scales:{ x:{ ticks:{ color:"#6f8f7e", maxTicksLimit:8 }, grid:{ color:"#0d2f22" } },
-               y:{ ticks:{ color:"#6f8f7e" }, grid:{ color:"#0d2f22" } } } } });
-  const tc = document.getElementById("turnover-chart").getContext("2d");
-  turnoverChart = new Chart(tc, { type:"bar", data:{ labels:[], datasets:[{ data:[], backgroundColor:"#f2ce78aa", borderRadius:4 }] },
-    options:{ animation:false, plugins:{ legend:{ display:false } },
-      scales:{ x:{ ticks:{ color:"#6f8f7e", font:{size:10} }, grid:{ display:false } },
-               y:{ ticks:{ color:"#6f8f7e" }, grid:{ color:"#0d2f22" } } } } });
+function initChart(){
+  phaseChart = new Chart(document.getElementById("phase-chart").getContext("2d"), {
+    type: "doughnut",
+    data: { labels: [], datasets: [{ data: [], backgroundColor: [], borderWidth: 2, borderColor: "#08221a" }] },
+    options: { animation:false, cutout:"52%",
+      plugins:{ legend:{ position:"right", labels:{ color:"#cfe8d8", boxWidth:14, font:{size:12}, padding:10 } } } },
+  });
 }
 
 async function refresh(){
@@ -108,34 +116,41 @@ async function refresh(){
   document.getElementById("st-bots").textContent = d.totalBots;
   document.getElementById("st-rounds").textContent = d.totalRounds;
   document.getElementById("st-turnover").textContent = fmt(d.totalTurnover);
-  const maxTo = Math.max(1, ...d.rooms.map(r => r.turnover));
-  const phaseMap = { waiting:"等人", dealing:"发牌", decision:"决策", reveal:"摊牌", settle:"结算", playing:"对局中", betting_confirm:"下注" };
 
-  // 房间表 + 进度条
-  const tb = document.getElementById("roomlist");
-  tb.innerHTML = d.rooms.map(r => `<tr>
+  // 扇形：各状态房间数量与占比
+  const byPhase = {};
+  for (const r of d.rooms) byPhase[r.phase] = (byPhase[r.phase] || 0) + 1;
+  const phases = Object.keys(byPhase);
+  phaseChart.data.labels = phases.map(p => `${phaseMap[p] || p} ×${byPhase[p]} (${Math.round(byPhase[p]/d.totalRooms*100)}%)`);
+  phaseChart.data.datasets[0].data = phases.map(p => byPhase[p]);
+  phaseChart.data.datasets[0].backgroundColor = phases.map(p => PHASE_COLORS[p] || "#8aa");
+  phaseChart.update("none");
+
+  // 资金 入/出/零和
+  document.getElementById("m-in").textContent = fmt(d.totalTurnover);
+  document.getElementById("m-out").textContent = fmt(d.totalPaid);
+  const net = d.totalNet || 0;
+  const z = document.getElementById("m-zero");
+  if (Math.abs(net) < 0.01) { z.textContent = "✓ 差额 = 0 · 资金守恒"; z.className = "ok"; }
+  else { z.textContent = "✗ 偏差 " + net; z.className = "bad"; }
+  document.getElementById("m-chips").textContent = fmt(d.totalChips);
+
+  // 房间表
+  document.getElementById("roomlist").innerHTML = d.rooms.map(r => `<tr>
     <td>${short(r.roomId)}</td>
     <td><span class="badge b-${r.phase==="playing"?"play":"wait"}">${phaseMap[r.phase]||r.phase}</span></td>
     <td>${r.round}</td><td>${r.online}</td><td>${r.real}</td><td>${r.bots}</td><td>${r.ante}</td>
-    <td><div class="pbar"><i style="width:${Math.round(r.turnover/maxTo*100)}%"></i></div></td>
-    <td>${fmt(r.turnover)}</td></tr>`).join("");
+    <td>${fmt(r.turnover)}</td><td>${fmt(r.paid)}</td></tr>`).join("");
 
-  // 各房玩家筹码（并行拉详情，做走势 + 事件差分）
+  // 事件差分：局数推进 + 筹码变动
   const details = await Promise.all(d.rooms.map(r =>
     fetch(API + "/api/rooms/" + r.roomId).then(x => x.json()).catch(() => null)));
-  const nowTick = new Date().toLocaleTimeString("zh-CN",{hour12:false});
-  trendLabels.push(nowTick); if (trendLabels.length > 40) trendLabels.shift();
-
   d.rooms.forEach((r, i) => {
     const det = details[i]; if (!det || !det.players) return;
-    // 事件：局数推进
     if (lastRounds[r.roomId] !== undefined && det.round > lastRounds[r.roomId])
       addEvent(`${short(r.roomId)} 进入第 ${det.round} 局`);
     lastRounds[r.roomId] = det.round;
-    // 事件：筹码变动（= 刚结算过的输赢）
-    let sum = 0;
     for (const p of det.players) {
-      sum += p.chips;
       const key = r.roomId + "|" + p.pid;
       const prev = lastPlayers[key];
       if (prev !== undefined && p.chips !== prev) {
@@ -144,29 +159,12 @@ async function refresh(){
       }
       lastPlayers[key] = p.chips;
     }
-    // 走势：每房筹码总和
-    if (!trendData[r.roomId]) trendData[r.roomId] = [];
-    const arr = trendData[r.roomId]; arr.push(sum);
-    if (arr.length > 40) arr.shift();
   });
-  // 清掉已消失的房
-  for (const k of Object.keys(trendData)) if (!d.rooms.find(r => r.roomId === k)) delete trendData[k];
 
-  // 图表更新
-  moneyChart.data.labels = trendLabels;
-  moneyChart.data.datasets = Object.entries(trendData).map(([rid, arr], i) => ({
-    label: short(rid), data: arr, borderColor: PALETTE[i % PALETTE.length],
-    backgroundColor: PALETTE[i % PALETTE.length] + "22", tension: .3, pointRadius: 0, borderWidth: 2,
-  }));
-  moneyChart.update("none");
-  turnoverChart.data.labels = d.rooms.map(r => short(r.roomId) + `(${r.ante})`);
-  turnoverChart.data.datasets[0].data = d.rooms.map(r => r.turnover);
-  turnoverChart.update("none");
-
-  document.getElementById("tick").textContent = "更新于 " + nowTick;
+  document.getElementById("tick").textContent = "更新于 " + new Date().toLocaleTimeString("zh-CN",{hour12:false});
 }
 
-initCharts();
+initChart();
 refresh().catch(e => console.error("refresh err", e));
 setInterval(() => refresh().catch(e => console.error("refresh err", e)), POLL_MS);
 </script>

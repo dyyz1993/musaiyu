@@ -32,21 +32,25 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.get('/health', (req, res) => res.json({ ok: true, rooms: rooms.size, uptime: Math.round(process.uptime()) }));
 app.get('/api/stats', (req, res) => {
   const roomList = [];
-  let totalOnline = 0, totalBots = 0, totalRounds = 0, totalTurnover = 0;
+  let totalOnline = 0, totalBots = 0, totalRounds = 0, totalTurnover = 0, totalPaid = 0, totalNet = 0, totalChips = 0;
   for (const room of rooms.values()) {
     const realPlayers = room.players.filter(p => !p.isBot).length;
     totalOnline += room.players.length;
     totalBots += room.players.filter(p => p.isBot).length;
     totalRounds += room.round;
     totalTurnover += room.stats.turnover;
+    totalPaid += room.stats.paid || 0;
+    totalNet += room.stats.net || 0;
+    room.players.forEach(p => { totalChips += p.chips; });
     roomList.push({
       roomId: room.id, phase: room.phase, round: room.round,
       online: room.players.length, real: realPlayers, bots: room.players.filter(p=>p.isBot).length,
       pot: room.pot, ante: room.ante, turnover: room.stats.turnover,
+      paid: room.stats.paid || 0,
       betCount: room.stats.betCount,
     });
   }
-  res.json({ rooms: roomList, totalRooms: rooms.size, totalOnline, totalBots, totalRounds, totalTurnover });
+  res.json({ rooms: roomList, totalRooms: rooms.size, totalOnline, totalBots, totalRounds, totalTurnover, totalPaid, totalNet, totalChips });
 });
 app.get('/api/rooms/:roomId', (req, res) => {
   const room = rooms.get(req.params.roomId);
@@ -86,7 +90,7 @@ class Room {
     this.round = 0; this.pot = 0; this.bankerSeq = 0;
     this.players = []; this.deck = []; this.decided = new Set(); this.raised = new Set();
     this.timers = {}; this.spectators = new Set();
-    this.stats = { turnover: 0, betCount: 0, lastActivity: Date.now() };
+    this.stats = { turnover: 0, paid: 0, net: 0, betCount: 0, lastActivity: Date.now() };
   }
   get seated() { return this.players.length; }
   isFull() { return this.seated >= this.maxPlayers; }
@@ -226,6 +230,9 @@ function reveal(room) {
   broadcast(room, 'reveal_all', { hands: room.players.map(p => ({ pid: p.pid, name: p.name, cards: p.cards })) });
   const { ledger, pairs } = E.settleRound(room.players);
   for (const p of room.players) p.chips += ledger[p.id] || 0;
+  const vals = Object.values(ledger);
+  room.stats.paid += vals.reduce((s, v) => s + Math.max(0, v), 0);   // 出: 派彩
+  room.stats.net  += vals.reduce((s, v) => s + v, 0);                // 零和校验
   scheduleSave();
   broadcast(room, 'settle_result', {
     ledger, pairs: pairs.map(pr => ({
@@ -282,6 +289,9 @@ async function runBotRound(room) {
   await sleep(1000);
   const { ledger } = E.settleRound(room.players);
   for (const p of room.players) p.chips += ledger[p.id] || 0;
+  const bvals = Object.values(ledger);
+  room.stats.paid += bvals.reduce((s, v) => s + Math.max(0, v), 0);
+  room.stats.net  += bvals.reduce((s, v) => s + v, 0);
   scheduleSave();
   broadcast(room, 'room_state', publicState(room));
   await sleep(3000);
@@ -395,7 +405,7 @@ function restoreRooms() {
       const room = new Room(s.id, { ante: s.ante, maxPlayers: s.maxPlayers });
       room.round = s.round || 0; room.bankerSeq = s.bankerSeq || 0;
       room._pSeq = s._pSeq || 0; room._botSeq = s._botSeq || 0;
-      if (s.stats) room.stats = s.stats;
+      if (s.stats) room.stats = { paid: 0, net: 0, betCount: 0, turnover: 0, lastActivity: 0, ...s.stats };
       for (const sp of (s.players || [])) {
         const p = room.addPlayer(null, sp.pid, sp.name, sp.face, !!sp.isBot);
         p.chips = sp.chips;
