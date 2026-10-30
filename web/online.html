@@ -390,6 +390,11 @@ const fmt=n=>n.toLocaleString("en-US");
 const SUIT_L={"♠":"S","♥":"H","♣":"C","♦":"D"};
 const RANK_STR={1:"A",11:"J",12:"Q",13:"K"};
 const rankStr=r=>RANK_STR[r]||String(r);
+function esc(t){ return String(t==null?"":t).replace(/[&<>"']/g, function(ch){
+  return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[ch]; });
+}
+// 头像只允许受限资源路径, 防外部 URL/JS 注入(v1.5.11)
+function safeFace(f){ return (typeof f==="string" && /^assets\/avatars\/[\w-]+\.png$/.test(f)) ? f : "assets/avatars/avatar-m3.png"; }
 function cardFaceSrc(c){
   if(c.hidden) return "assets/cards/B-1.png";   // 掩码牌回退牌背, 不再产生 src=null 白板(v1.5.6)
   if(c.joker) return "assets/cards/"+(c.red?"J-1":"J-2")+".png";
@@ -450,7 +455,7 @@ function renderSeats(){
     const faces=real?p.cards.map(c=>`<span class="fc"><img src="${cardFaceSrc(c)}"></span>`).join(""):"";
     el.innerHTML=`
       <div class="avwrap">
-        <div class="avatar" style="background-image:url('${p.face||''}')"></div>
+        <div class="avatar" style="background-image:url('${safeFace(p.face)}')"></div>
         ${p.banker?'<div class="bankerbadge"></div>':""}
         ${S.raised.has(p.pid)?'<div class="raisehand" title="已举手要补牌">✋</div>':''}
         <div class="sebring" data-ring="${p.pid}" style="display:none">
@@ -460,7 +465,7 @@ function renderSeats(){
         </div>
       </div>
       <div class="seatinfo">
-        <span class="sname">${p.name}</span>
+        <span class="sname">${esc(p.name)}</span>
         <span class="schips"><span class="chip-ic"></span>${fmt(p.chips)}</span>
         <div class="cardsrow">${real?faces:backs}</div>
       </div>`;
@@ -878,8 +883,8 @@ function showSettle(d,net){
     const v=ledger[p.pid]||0, w=Math.abs(v)/maxAbs*100;
     return `<div class="lbrow ${isMe(p)?"me":""}">
       <span class="lbrank">${i+1}</span>
-      <span class="lbav" style="background-image:url('${p.face||MY_AVATAR}')"></span>
-      <span class="lbname">${p.name}</span>
+      <span class="lbav" style="background-image:url('${safeFace(p.face)}')"></span>
+      <span class="lbname">${esc(p.name)}</span>
       <span class="lbcards">${cardsOf(p)}</span>
       <span class="lbbar"><span class="lbfill" style="width:${w}%;${v>=0?"left:0;background:rgba(39,174,96,.55)":"right:0;background:rgba(192,57,43,.5)"}"></span></span>
       <span class="lbamt ${v>=0?"pos":"neg"}">${v>=0?"+":""}${fmt(v)}</span></div>`;
@@ -909,7 +914,7 @@ function showSettle(d,net){
 
   /* ---- 视图3: 对阵表(上三角留空, 每对只出现一次) ---- */
   const head=order.map(p=>{ const nv=ledger[p.pid]||0;
-    return `<th class="${isMe(p)?"meh":""}"><div class="hname">${p.name}</div>
+    return `<th class="${isMe(p)?"meh":""}"><div class="hname">${esc(p.name)}</div>
     <div class="hcards">${cardsOf(p)}</div>
     <div class="hsub ${nv>=0?"pos":"neg"}">${nv>=0?"+":""}${fmt(nv)}</div></th>`;}).join("");
   const body=order.map((p,i)=>{
@@ -920,7 +925,7 @@ function showSettle(d,net){
       const wt=wtype.get(key(p.pid,q.pid))||"";
       return `<td class="${v>0?"win":"lose"}" title="${TN[wt]||wt}">${v>0?"+":""}${fmt(v)}</td>`;
     }).join("");
-    return `<tr class="${isMe(p)?"me":""}"><th class="rowh"><div class="hname">${p.name}</div><div class="hcards">${cardsOf(p)}</div></th>${cells}</tr>`;
+    return `<tr class="${isMe(p)?"me":""}"><th class="rowh"><div class="hname">${esc(p.name)}</div><div class="hcards">${cardsOf(p)}</div></th>${cells}</tr>`;
   }).join("");
 
   const VIEWS={

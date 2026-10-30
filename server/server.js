@@ -302,6 +302,10 @@ function playerAction(room, pid, action, isTimeout = false) {
   const p = room.findPlayer(pid);
   if (!p || room.phase !== 'decision') return;
   if (room.decided.has(pid)) return;   // 并发双动作(v1.5.5): 已决策过拒绝二次, 防 pass 后立刻 draw 多抽
+  // 回合校验(v1.5.11, ChatGPT 审查 P1-4): 只有当前行动者且未弃牌才能出牌,
+  // 防 inTurn=false 的玩家提交 draw 提前消耗牌堆
+  if (!p.inTurn || p.folded) return;
+  if (action !== 'draw' && action !== 'pass') return;   // 动作枚举
   const timer = room.timers[pid];
   if (timer) { clearTimeout(timer.timeout); timer.resolve(); delete room.timers[pid]; }
   room.decided.add(pid); p.inTurn = false;
