@@ -386,17 +386,23 @@ io.on('connection', (sock) => {
           if (r && r.phase === 'waiting' && r.canStart()) { delete r._startTimer; startRound(r); }
         }, 2000);
       }
-    } else if (bot && !room.isFull()) {
-      // bot 中途入座：本轮坐出（folded、不出注），下一局自动参战
-      let p = room.players.find(x => x.isBot && x.name === (name || ''));
-      if (p) { p.sid = sock.id; if (tier !== undefined) p.tier = tier; }
-      else {
-        p = room.addPlayer(sock.id, 'p' + (room._pSeq = (room._pSeq || 0) + 1), name || '玩家', face, true);
+    } else if (!room.isFull()) {
+      // 中途入座(v1.5.6): 人/bot 通用——同名者接回原座位(刷新恢复,补发私牌), 新座位本轮坐出、下局正式参战
+      let p = bot
+        ? room.players.find(x => x.isBot && x.name === (name || ''))
+        : room.players.find(x => !x.isBot && x.name === (name || '玩家'));
+      if (p) {
+        p.sid = sock.id;
+        if (face) p.face = face;
+        if (tier !== undefined && bot) p.tier = tier;
+      } else {
+        p = room.addPlayer(sock.id, 'p' + (room._pSeq = (room._pSeq || 0) + 1), name || '玩家', face, !!bot);
         if (tier !== undefined) p.tier = tier;
-        p.folded = true; p.stake = 0;
+        if (room.phase !== 'waiting') { p.folded = true; p.stake = 0; }
         scheduleSave();
       }
       sock.emit('joined', { pid: p.pid, roomId, state: publicState(room) });
+      if (p.cards.length && room.phase !== 'waiting' && room.phase !== 'betting_confirm') sock.emit('your_cards', { cards: p.cards });
       broadcast(room, 'room_state', publicState(room));
     } else { room.spectators.add(sock.id); sock.emit('spectator', { roomId, state: publicState(room) }); }
   });

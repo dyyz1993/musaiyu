@@ -206,7 +206,7 @@ const SUIT_L={"♠":"S","♥":"H","♣":"C","♦":"D"};
 const RANK_STR={1:"A",11:"J",12:"Q",13:"K"};
 const rankStr=r=>RANK_STR[r]||String(r);
 function cardFaceSrc(c){
-  if(c.hidden) return null;
+  if(c.hidden) return "assets/cards/B-1.png";   // 掩码牌回退牌背, 不再产生 src=null 白板(v1.5.6)
   if(c.joker) return "assets/cards/"+(c.red?"J-1":"J-2")+".png";
   return "assets/cards/"+(SUIT_L[c.suit]||c.suit)+"-"+rankStr(c.rank)+".png";
 }
@@ -367,13 +367,25 @@ const SERVER_URL = location.hostname.includes("pages.dev")
 let sock=null;
 const st={count:0,raised:new Set()};
 
+/* 进门快速匹配(v1.5.6): 自动坐进人最多的 bot 房(留座设计每房必有空位), 大厅只作兜底 */
+async function quickJoin(){
+  let target=null;
+  try{
+    const d=await fetch((SERVER_URL||"")+"/musaiyu/api/stats").then(r=>r.json());
+    const rooms=(d.rooms||[]).filter(r=>r.roomId.startsWith("bot_")&&r.online<9);
+    rooms.sort((a,b)=>b.online-a.online);
+    target=rooms[0]?.roomId;
+  }catch(e){}
+  sock.emit("join_room",{roomId:target||"lobby",name:"阿洲",face:"assets/avatars/avatar-m3.png"});
+}
+
 function connect(){
   const opts={path:"/musaiyu/socket.io/",transports:["websocket","polling"],reconnection:true,reconnectionDelay:1000,reconnectionDelayMax:8000};
   sock=SERVER_URL?io(SERVER_URL,opts):io(opts);
   sock.on("connect",()=>{
     $("#conn").textContent="已连接"; $("#conn").className="ok";
     $("#reconnect").classList.remove("show");
-    sock.emit("join_room",{roomId:"lobby",name:"阿洲",face:"assets/avatars/avatar-m3.png"});
+    quickJoin();
   });
   sock.on("disconnect",()=>{ $("#conn").textContent="断开"; $("#conn").className=""; $("#reconnect").classList.add("show"); });
   sock.on("joined",d=>{ S.myPid=d.pid; S.roomId=d.roomId; applyState(d.state); setBanner(d.state.phase==="waiting"?"等待玩家加入…":"对局进行中"); });
@@ -390,11 +402,11 @@ function connect(){
   });
   sock.on("card_dealt",async d=>{
     const p=S.players.find(x=>x.pid===d.pid); if(!p) return;
-    p.cards=p.cards||[]; p.cards.push({hidden:true});
     if(d.pid===S.myPid){
-      // 我自己的牌: 飞入动画
+      // 我自己的牌: 服务端已私发 your_cards(真牌), 不再推 hidden 占位(v1.5.6 白板根因之一)
       await flyCard($("#hand")); renderHand(true);
     } else {
+      p.cards=p.cards||[]; p.cards.push({hidden:true});
       renderSeats(); await sleep(300);
     }
   });
@@ -405,11 +417,12 @@ function connect(){
   });
   sock.on("forced_draw",d=>{
     setBanner(`${d.name} 单鬼 · 强制补牌`);
-    const p=S.players.find(x=>x.pid===d.pid); if(p){p.cards.push({hidden:true}); renderSeats();}
+    const p=S.players.find(x=>x.pid===d.pid); if(p){ if(d.pid!==S.myPid) p.cards.push({hidden:true}); renderSeats();}
   });
   sock.on("decision_turn",d=>{
-    S.phase="myturn"===d.pid?S.phase:S.phase; // no-op
     if(d.pid===S.myPid){
+      // 轮到我时收起结算面板(否则面板盖住过/补按钮,回合在面板后超时,v1.5.6)
+      const o=$("#overlay"); if(o.classList.contains("show")) o.classList.remove("show");
       setBanner("轮到你 · 过 或 补一张");
       $("#btn-stop").disabled=false; $("#btn-draw").disabled=false;
       startRing(d.timeout||15,()=>{ $("#btn-stop").click(); }, S.myPid);
@@ -423,7 +436,8 @@ function connect(){
   sock.on("player_action",d=>{
     const p=S.players.find(x=>x.pid===d.pid); if(!p) return;
     p.inTurn=false;
-    if(d.action==="draw") p.cards.push({hidden:true});
+    // 自己的补牌: 真牌已由 your_cards 私发, 不推 hidden 占位(v1.5.6 4张白板根因)
+    if(d.action==="draw" && d.pid!==S.myPid) p.cards.push({hidden:true});
     setBanner(`${d.name} ${d.action==="pass"?"过":"补了一张"}`);
     renderSeats();
   });
@@ -450,7 +464,11 @@ function applyState(state){
   if(!state) return;
   S.players=(state.players||[]).map(p=>{
     const old=S.players.find(x=>x.pid===p.pid);
-    return {...p,face:p.face||old?.face||"",cards:p.cards||old?.cards||[],chips:p.chips||0};
+    let cards=p.cards||old?.cards||[];
+    // 我的手牌: room_state 广播的是 hidden 掩码, 不能覆盖 your_cards 私发的真牌(v1.5.6 手牌白板修复)
+    if(p.pid===S.myPid && old?.cards?.length && old.cards[0] && !old.cards[0].hidden && p.cards?.[0]?.hidden)
+      cards=old.cards;
+    return {...p,face:p.face||old?.face||"",cards,chips:p.chips||0};
   });
   S.phase=state.phase; S.round=state.round; S.pot=state.pot; S.ante=state.ante;
   renderAll();
