@@ -8,7 +8,6 @@ const E = require('./engine.js');
 
 const PORT = process.env.PORT || 3010;
 const MY_TURN_SEC = 15, AI_TURN_SEC = 5;
-const BOT_ROOM_COUNT = 10, BOTS_PER_ROOM = 8;
 const ROOM_CAP = +process.env.ROOM_CAP || 8;                 // 真人房上限（不含 bot 自嗨房与大厅）
 const ROOM_EMPTY_MS = +process.env.ROOM_EMPTY_MS || 5*60*1000; // 最后一个真人走后多久销毁
 const SWEEP_MS = +process.env.SWEEP_MS || 60*1000;
@@ -53,7 +52,7 @@ app.get('/api/stats', (req, res) => {
       betCount: room.stats.betCount,
     });
   }
-  res.json({ rooms: roomList, totalRooms: rooms.size, totalOnline, totalBots, totalRounds, totalTurnover, totalPaid, totalNet, totalChips });
+  res.json({ rooms: roomList, totalRooms: rooms.size, totalOnline, totalBots, totalRounds, totalTurnover, totalPaid, totalNet, totalChips, totalRecycled: recycled });
 });
 app.get('/api/rooms/:roomId', (req, res) => {
   const room = rooms.get(req.params.roomId);
@@ -134,21 +133,25 @@ function humanRoomCount() {
 function liveHumans(room) {
   return room.players.filter(p => !p.isBot && p.sid).length;
 }
+let recycled = 0;
 function destroyRoom(room) {
   for (const t of Object.values(room.timers)) clearTimeout(t.timeout);
   if (room._startTimer) { clearTimeout(room._startTimer); delete room._startTimer; }
   rooms.delete(room.id);
+  recycled++;
   console.log(`[room] 空房回收: ${room.id}`);
 }
 setInterval(() => {
   const now = Date.now();
   for (const room of [...rooms.values()]) {
-    if (room.id.startsWith('bot_') || room.id === 'lobby') continue;
+    if (room.id === 'lobby') continue;   // 大厅永久保留
     const liveSockets = io.sockets.adapter.rooms.get(room.id)?.size || 0;
     const empty = liveHumans(room) === 0 && liveSockets === 0;
     if (!empty) { room.emptySince = 0; continue; }
+    // bot_ 房给 30 分钟宽限（舰队重启重连期间不该被误杀），其余真人房按标准窗口
+    const grace = room.id.startsWith('bot_') ? 30 * 60 * 1000 : ROOM_EMPTY_MS;
     if (!room.emptySince) room.emptySince = now;
-    else if (now - room.emptySince >= ROOM_EMPTY_MS) destroyRoom(room);
+    else if (now - room.emptySince >= grace) destroyRoom(room);
   }
 }, SWEEP_MS).unref();
 
@@ -172,6 +175,7 @@ function publicState(room) {
 function startRound(room) {
   room.round++; room.phase = 'betting_confirm'; room.pot = 0;
   room.decided = new Set(); room.raised = new Set(); room.stats.lastActivity = Date.now();
+  room.deck = E.shuffle(E.buildDeck());   // 每局重建 55 张牌堆
   if (room.round > 1) {
     room.players.forEach(p => { p.banker = false; p.cards = []; p.folded = false; p.inTurn = false; });
     room.bankerSeq++;
@@ -188,9 +192,11 @@ function startRound(room) {
 async function dealCards(room) {
   room.phase = 'dealing';
   broadcast(room, 'phase', { phase: 'dealing' });
+  if (!room.deck || room.deck.length < room.players.length * E.PRESET.maxCards) room.deck = E.shuffle(E.buildDeck());
   const order = room.actionOrder();
   for (let r = 0; r < E.PRESET.startCards; r++) {
     for (const p of order) {
+      if (p.isBot && !p.sid) continue;   // 空椅 bot 不发牌
       if (p.cards.length >= E.PRESET.startCards) continue;
       p.cards.push(room.deck.pop());
       broadcast(room, 'card_dealt', { pid: p.pid, count: p.cards.length });
@@ -213,11 +219,12 @@ async function startDecision(room) {
   broadcast(room, 'phase', { phase: 'decision' });
   const order = room.actionOrder();
   for (const p of order) {
-    if (p.cards.length >= E.PRESET.maxCards) continue;
+    if (p.folded || p.cards.length >= E.PRESET.maxCards) continue;
     p.inTurn = true;
-    broadcast(room, 'decision_turn', { pid: p.pid, name: p.name, timeout: p.isBot ? AI_TURN_SEC : MY_TURN_SEC });
+    broadcast(room, 'decision_turn', { pid: p.pid, name: p.name, timeout: MY_TURN_SEC });
     broadcast(room, 'room_state', publicState(room));
-    if (p.isBot) {
+    if (p.isBot && !p.sid) {
+      // 仅限真人房里代填的内置 bot（无 socket）；外部 ws bot 走 waitPlayerAction 自己出牌
       await sleep(AI_TURN_SEC * 1000 * 0.72);
       const r = E.classifyHand(p.cards);
       const good = ["tianGong9","tianGong8","shuangGui","sanGui","zhenBaoZi","tongHuaShun","hunShun"].includes(r.type) || r.pts >= 7;
@@ -256,7 +263,8 @@ function reveal(room) {
   room.phase = 'reveal';
   broadcast(room, 'phase', { phase: 'reveal' });
   broadcast(room, 'reveal_all', { hands: room.players.map(p => ({ pid: p.pid, name: p.name, cards: p.cards })) });
-  const { ledger, pairs } = E.settleRound(room.players);
+  const active = room.players.filter(p => p.cards.length > 0);   // 中途入座坐出者不参与结算
+  const { ledger, pairs } = E.settleRound(active);
   for (const p of room.players) p.chips += ledger[p.id] || 0;
   const vals = Object.values(ledger);
   room.stats.paid += vals.reduce((s, v) => s + Math.max(0, v), 0);   // 出: 派彩
@@ -273,62 +281,17 @@ function reveal(room) {
 }
 
 function nextRound(room) {
-  if (room.realPlayers.length >= 2) startRound(room);
+  // 局间清扫：离场 bot 的死座（isBot 且无连接）直接摘除，防幽灵座位累积
+  room.players = room.players.filter(p => !p.isBot || p.sid);
+  // 活座 = 真人（含暂断线）+ 在线 bot；全走光就回等人态等舰队回填
+  const live = room.players.filter(p => !p.isBot || p.sid).length;
+  if (live >= 2) startRound(room);
   else { room.phase = 'waiting'; broadcast(room, 'phase', { phase: 'waiting' }); }
-}
-
-/* ==================== Bot 自嗨房间 ==================== */
-function createBotRoom(ante) {
-  const roomId = 'bot_' + Date.now().toString(36);
-  const room = new Room(roomId, { ante, maxPlayers: 9 });
-  room.phase = 'playing'; rooms.set(roomId, room);
-  room.fillBots(BOTS_PER_ROOM);
-  runBotRound(room);
-  return room;
-}
-async function runBotRound(room) {
-  room.round++;
-  room.deck = E.shuffle(E.buildDeck());
-  room.decided = new Set(); room.raised = new Set();
-  room.players.forEach(p => { p.banker = false; p.cards = []; p.inTurn = false; });
-  room.bankerSeq++;
-  room.players[room.bankerSeq % room.players.length].banker = true;
-  // 与 startRound 同一套注额/流水语义（原缺失导致 bot 房流水恒 0）
-  room.players.forEach(p => { p.stake = Math.min(room.ante, Math.max(1, p.chips)); p.folded = false; });
-  room.pot = room.players.reduce((s, p) => s + p.stake, 0);
-  room.stats.turnover += room.pot;
-  room.stats.betCount++;
-  room.stats.lastActivity = Date.now();
-  broadcast(room, 'room_state', publicState(room));
-  await sleep(2000);
-  const order = room.actionOrder();
-  for (const p of order) {
-    if (p.cards.length >= E.PRESET.maxCards) continue;
-    p.inTurn = true; broadcast(room, 'room_state', publicState(room));
-    await sleep(800);
-    const r = E.classifyHand(p.cards);
-    const good = ["tianGong9","tianGong8","shuangGui","sanGui","zhenBaoZi","tongHuaShun","hunShun"].includes(r.type) || r.pts >= 7;
-    if (!good && p.cards.length < E.PRESET.maxCards && Math.random() < 0.7) p.cards.push(room.deck.pop());
-    p.inTurn = false;
-    broadcast(room, 'room_state', publicState(room));
-    await sleep(400);
-  }
-  broadcast(room, 'room_state', publicState(room));
-  await sleep(1000);
-  const { ledger } = E.settleRound(room.players);
-  for (const p of room.players) p.chips += ledger[p.id] || 0;
-  const bvals = Object.values(ledger);
-  room.stats.paid += bvals.reduce((s, v) => s + Math.max(0, v), 0);
-  room.stats.net  += bvals.reduce((s, v) => s + v, 0);
-  scheduleSave();
-  broadcast(room, 'room_state', publicState(room));
-  await sleep(3000);
-  if (rooms.has(room.id)) runBotRound(room);
 }
 
 /* ==================== Socket 事件 ==================== */
 io.on('connection', (sock) => {
-  sock.on('join_room', ({ roomId, name, face, botCount }) => {
+  sock.on('join_room', ({ roomId, name, face, botCount, bot, ante }) => {
     sock.join(roomId);
     let room = rooms.get(roomId);
     if (!room) {
@@ -336,13 +299,13 @@ io.on('connection', (sock) => {
         sock.emit('room_rejected', { reason: `房间数已达上限（${ROOM_CAP} 间），请稍后再试` });
         return;
       }
-      room = new Room(roomId, { ante: 200, maxPlayers: 9 }); rooms.set(roomId, room);
+      room = new Room(roomId, { ante: ante || 200, maxPlayers: 9 }); rooms.set(roomId, room);
     }
     if (room.phase === 'waiting' && !room.isFull()) {
       // 同名续档：同名字真人复用旧座位（页面刷新/服务重启后筹码不重开）
-      let p = room.players.find(x => !x.isBot && x.name === (name || '玩家'));
+      let p = room.players.find(x => x.name === (name || '玩家') && x.isBot === !!bot);
       if (p) { p.sid = sock.id; if (face) p.face = face; }
-      else { p = room.addPlayer(sock.id, 'p' + (room._pSeq = (room._pSeq || 0) + 1), name || '玩家', face); scheduleSave(); }
+      else { p = room.addPlayer(sock.id, 'p' + (room._pSeq = (room._pSeq || 0) + 1), name || '玩家', face, !!bot); scheduleSave(); }
       const target = Math.min(botCount || 0, room.maxPlayers - 1);
       if (target > 0) room.fillBots(room.players.length + target);
       sock.emit('joined', { pid: p.pid, roomId, state: publicState(room) });
@@ -353,6 +316,17 @@ io.on('connection', (sock) => {
           if (r && r.phase === 'waiting' && r.canStart()) { delete r._startTimer; startRound(r); }
         }, 2000);
       }
+    } else if (bot && !room.isFull()) {
+      // bot 中途入座：本轮坐出（folded、不出注），下一局自动参战
+      let p = room.players.find(x => x.isBot && x.name === (name || ''));
+      if (p) { p.sid = sock.id; }
+      else {
+        p = room.addPlayer(sock.id, 'p' + (room._pSeq = (room._pSeq || 0) + 1), name || '玩家', face, true);
+        p.folded = true; p.stake = 0;
+        scheduleSave();
+      }
+      sock.emit('joined', { pid: p.pid, roomId, state: publicState(room) });
+      broadcast(room, 'room_state', publicState(room));
     } else { room.spectators.add(sock.id); sock.emit('spectator', { roomId, state: publicState(room) }); }
   });
   sock.on('create_room', ({ name, face, botCount, ante, maxPlayers }) => {
@@ -382,6 +356,15 @@ io.on('connection', (sock) => {
   });
   sock.on('player_action', ({ roomId, pid, action }) => {
     const room = rooms.get(roomId); if (room) playerAction(room, pid, action, false);
+  });
+  sock.on('leave_room', ({ roomId, pid }) => {
+    // 优雅离场：等待中直接摘座；局中标记坐出（不参决策/不结算），座位释放
+    const room = rooms.get(roomId); if (!room) return;
+    const p = room.findPlayer(pid);
+    if (!p || p.sid !== sock.id) return;
+    if (room.phase === 'waiting') room.removePlayer(pid);
+    else { p.folded = true; p.stake = 0; p.sid = null; }
+    broadcast(room, 'room_state', publicState(room));
   });
   sock.on('disconnect', () => {
     for (const room of rooms.values()) {
@@ -439,7 +422,9 @@ function restoreRooms() {
   try {
     if (!fs.existsSync(SNAP_FILE)) return 0;
     const saved = JSON.parse(fs.readFileSync(SNAP_FILE, 'utf8'));
+    let skippedBots = 0;
     for (const s of saved) {
+      if (s.id.startsWith('bot_')) { skippedBots++; continue; }   // bot 房交给外部舰队重建
       const room = new Room(s.id, { ante: s.ante, maxPlayers: s.maxPlayers });
       room.round = s.round || 0; room.bankerSeq = s.bankerSeq || 0;
       room._pSeq = s._pSeq || 0; room._botSeq = s._botSeq || 0;
@@ -451,12 +436,9 @@ function restoreRooms() {
       }
       room.phase = 'waiting';
       rooms.set(room.id, room);
-      // bot 自嗨房恢复后补齐到标准人数再续跑对局循环（createBotRoom 语义 phase=playing）
-      if (room.id.startsWith('bot_') && room.players.length >= 2) {
-        room.fillBots(BOTS_PER_ROOM); room.phase = 'playing'; runBotRound(room);
-      }
+      // 外部 bot 舰队重连后会自己 join_room 回房继续，服务端不再代跑
     }
-    console.log(`[store] 已恢复 ${saved.length} 个房间`);
+    console.log(`[store] 已恢复 ${saved.length - skippedBots} 个真人房（bot 房 ${skippedBots} 间由舰队重建）`);
     return saved.length;
   } catch (e) { console.error('[store] 快照恢复失败:', e.message); return 0; }
 }
@@ -466,10 +448,7 @@ restoreRooms();
 setInterval(scheduleSave, 30000);
 process.on('SIGTERM', () => { flushSave(); process.exit(0); });
 process.on('SIGINT', () => { flushSave(); process.exit(0); });
-// bot 房补齐：恢复过的不重复建
-setTimeout(() => {
-  const have = [...rooms.values()].filter(r => r.id.startsWith('bot_')).length;
-  for (let i = have; i < BOT_ROOM_COUNT; i++) setTimeout(() => createBotRoom(200 + i * 100), i * 1500);
-}, 2000);
+// bot_ 房由外部舰队(bot/soak.js)负责建与填，服务端不再自建
+
 
 httpServer.listen(PORT, () => { console.log(`木虱鱼服务端已启动: http://0.0.0.0:${PORT}/  (socket.io 就绪)`); });
