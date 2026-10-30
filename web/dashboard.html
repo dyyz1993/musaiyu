@@ -72,6 +72,8 @@ td{padding:7px 8px;border-bottom:1px solid #0d2f22;font-variant-numeric:tabular-
   </div>
 </div>
 
+<div class="card full" style="margin-bottom:12px"><h2>📈 段位收益比实时曲线（roi = 累计净收益 ÷ 累计投入底注，越高越聪明）</h2><canvas id="roi-chart" height="90"></canvas></div>
+
 <div class="card full" style="margin-bottom:12px"><h2>📈 实时事件流（结算 / 筹码变动）</h2><div id="event-log"></div></div>
 
 <div class="card full"><h2>🀄 房间列表</h2>
@@ -87,10 +89,13 @@ const POLL_MS = 5000;
 const PHASE_COLORS = { playing:"#5ed982", waiting:"#f2ce78", dealing:"#6fb3ff", decision:"#ffa94d", reveal:"#d78cf2", settle:"#f2789f", betting_confirm:"#5adcd8" };
 const phaseMap = { waiting:"等人", dealing:"发牌", decision:"决策", reveal:"摊牌", settle:"结算", playing:"对局中", betting_confirm:"下注" };
 
-let phaseChart = null;
+let phaseChart = null, roiChart = null;
+const roiHist = { labels: [], data: { 0: [], 1: [], 2: [], 3: [] } };   // 收益比历史(90点滚动)
 const lastPlayers = {};   // `${roomId}|${pid}` -> chips（事件差分）
 const lastRounds = {};    // roomId -> round
 const events = [];
+const TIER_LABEL = { 0: "L0随机", 1: "L1基础", 2: "L2进阶", 3: "L3计数" };
+const TIER_COLOR = { 0: "#8aa", 1: "#6fb3ff", 2: "#f2ce78", 3: "#5ed982" };
 
 function fmt(n){ return (n??0).toLocaleString("en-US"); }
 function short(id){ return id.startsWith("bot_") ? "房 "+id.slice(4,10) : "房 "+id.slice(0,8); }
@@ -106,6 +111,16 @@ function initChart(){
     data: { labels: [], datasets: [{ data: [], backgroundColor: [], borderWidth: 2, borderColor: "#08221a" }] },
     options: { animation:false, cutout:"52%",
       plugins:{ legend:{ position:"right", labels:{ color:"#cfe8d8", boxWidth:14, font:{size:12}, padding:10 } } } },
+  });
+  roiChart = new Chart(document.getElementById("roi-chart").getContext("2d"), {
+    type: "line",
+    data: { labels: [], datasets: [0,1,2,3].map(t => ({
+      label: TIER_LABEL[t], data: [], borderColor: TIER_COLOR[t],
+      backgroundColor: TIER_COLOR[t] + "22", tension: .3, pointRadius: 0, borderWidth: 2 })) },
+    options: { animation:false,
+      plugins:{ legend:{ labels:{ color:"#cfe8d8", boxWidth:12, font:{size:11} } } },
+      scales:{ x:{ ticks:{ color:"#6f8f7e", maxTicksLimit:8 }, grid:{ color:"#0d2f22" } },
+               y:{ ticks:{ color:"#6f8f7e", callback: v => v + "%" }, grid:{ color:"#0d2f22" } } } },
   });
 }
 
@@ -134,6 +149,17 @@ async function refresh(){
   if (Math.abs(net) < 0.01) { z.textContent = "✓ 差额 = 0 · 资金守恒"; z.className = "ok"; }
   else { z.textContent = "✗ 偏差 " + net; z.className = "bad"; }
   document.getElementById("m-chips").textContent = fmt(d.totalChips);
+
+  // 段位收益比曲线（roi% 滚动窗口）
+  const nowT = new Date().toLocaleTimeString("zh-CN",{hour12:false});
+  roiHist.labels.push(nowT); if (roiHist.labels.length > 90) roiHist.labels.shift();
+  for (let t = 0; t <= 3; t++) {
+    const roi = d.tiers?.[t]?.roi ?? null;
+    const arr = roiHist.data[t]; arr.push(roi); if (arr.length > 90) arr.shift();
+    roiChart.data.datasets[t].data = arr;
+  }
+  roiChart.data.labels = roiHist.labels;
+  roiChart.update("none");
 
   // 房间表
   document.getElementById("roomlist").innerHTML = d.rooms.map(r => `<tr>

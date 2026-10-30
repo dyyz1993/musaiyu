@@ -61,6 +61,11 @@ app.get('/api/stats', (req, res) => {
   }
   const tiersOut = {};
   for (const [t, v] of Object.entries(tiers)) tiersOut[t] = { players: v.players, chipsAvg: Math.round(v.chipsSum / v.players) };
+  for (const [t, v] of Object.entries(tierAgg)) {
+    tiersOut[t] = tiersOut[t] || { players: 0, chipsAvg: 0 };
+    tiersOut[t].roi = v.stake > 0 ? +(v.net / v.stake * 100).toFixed(2) : 0;   // 收益比%
+    tiersOut[t].net = v.net; tiersOut[t].stake = v.stake;
+  }
   res.json({ rooms: roomList, totalRooms: rooms.size, totalOnline, totalBots, totalRounds, totalTurnover, totalPaid, totalNet, totalChips, totalRecycled: recycled, tiers: tiersOut });
 });
 app.get('/api/rooms/:roomId', (req, res) => {
@@ -184,6 +189,7 @@ setInterval(() => {
 }, SWEEP_MS).unref();
 
 /* ==================== 广播 ==================== */
+const tierAgg = {};   // 段位收益比累计: {tier: {net, stake}} — 内存态，重启清零重新累计
 function broadcast(room, event, data) { io.to(room.id).emit(event, data); }
 function publicState(room) {
   return {
@@ -303,6 +309,13 @@ function reveal(room) {
   const active = room.players.filter(p => p.cards.length > 0);   // 中途入座坐出者不参与结算
   const { ledger, pairs } = E.settleRound(active);
   for (const p of room.players) p.chips += ledger[p.id] || 0;
+  // 段位收益比累计（v1.5.2）：roi = 累计净收益/累计投入(底注×局数)，按段位观测"谁更聪明"
+  for (const p of active) {
+    if (p.tier === undefined || p.tier === null) continue;
+    const t = tierAgg[p.tier] ||= { net: 0, stake: 0 };
+    t.net += ledger[p.id] || 0;
+    t.stake += p.stake || 0;
+  }
   const vals = Object.values(ledger);
   room.stats.paid += vals.reduce((s, v) => s + Math.max(0, v), 0);   // 出: 派彩
   room.stats.net  += vals.reduce((s, v) => s + v, 0);                // 零和校验
