@@ -28,6 +28,12 @@ app.use((req, res, next) => {
   else if (req.url.startsWith('/musaiyu/')) req.url = req.url.slice('/musaiyu'.length);
   next();
 });
+// HTML 不缓存(v1.5.7): 避免玩家浏览器滞留旧 JS 反复踩已修复的 bug
+app.use((req, res, next) => {
+  if (req.method === 'GET' && (req.url === '/' || req.url.endsWith('.html')))
+    res.setHeader('Cache-Control', 'no-cache');
+  next();
+});
 app.use(express.static(path.join(__dirname, 'public')));
 
 /* ==================== 监控 API ==================== */
@@ -358,6 +364,43 @@ io.on('connection', (sock) => {
         broadcast(r, 'room_state', publicState(r));
       }
     }
+    // 真人匹配(v1.5.7): 落 lobby/目标房不存在/已满时, 从 bot 房腾座——踢掉最弱 bot(弃牌优先→筹码最低), 保证真人必有座位
+    if (!bot && roomId === 'lobby') {
+      const bots = [...rooms.values()].filter(r => r.id.startsWith('bot_') && r.botPlayers.length >= 4);
+      const open = bots.find(r => !r.isFull());
+      const pick = open || (bots.length ? bots.sort((a, b) => b.botPlayers.length - a.botPlayers.length)[0] : null);
+      if (pick) {
+        if (pick.isFull()) {
+          const evict = [...pick.botPlayers].sort((a, b) => (b.folded - a.folded) || (a.chips - b.chips))[0];
+          if (evict) {
+            if (pick.phase === 'waiting') pick.removePlayer(evict.pid);
+            else { evict.folded = true; evict.stake = 0; evict.sid = null; }
+            broadcast(pick, 'room_state', publicState(pick));
+            console.log(`[match] bot 让座: ${evict.name} @ ${pick.id} → ${name}`);
+          }
+        }
+        roomId = pick.id;
+      }
+    }
+    if (!bot) {
+      const target = rooms.get(roomId);
+      if (!target || target.isFull()) {
+        const cands = [...rooms.values()].filter(r => r.id.startsWith('bot_') && r.botPlayers.length >= 4);
+        if (cands.length) {
+          cands.sort((a, b) => b.botPlayers.length - a.botPlayers.length);
+          const room2 = cands[0];
+          const evict = [...room2.botPlayers].sort((a, b) =>
+            (b.folded - a.folded) || (a.chips - b.chips))[0];
+          if (evict) {
+            if (room2.phase === 'waiting') room2.removePlayer(evict.pid);
+            else { evict.folded = true; evict.stake = 0; evict.sid = null; }
+            broadcast(room2, 'room_state', publicState(room2));
+            console.log(`[match] bot 让座: ${evict.name} @ ${room2.id} → ${name}`);
+          }
+          roomId = room2.id;
+        }
+      }
+    }
     sock.join(roomId);
     let room = rooms.get(roomId);
     if (!room) {
@@ -369,13 +412,11 @@ io.on('connection', (sock) => {
     }
     if (room.phase === 'waiting' && !room.isFull()) {
       // 同名续档：同名字真人复用旧座位（页面刷新/服务重启后筹码不重开）
-      let p = room.players.find(x => x.name === (name || '玩家') && x.isBot === !!bot);
-      if (p) { p.sid = sock.id; if (face) p.face = face; if (tier !== undefined) p.tier = tier; }
-      else {
-        p = room.addPlayer(sock.id, 'p' + (room._pSeq = (room._pSeq || 0) + 1), name || '玩家', face, !!bot);
-        if (tier !== undefined) p.tier = tier;
-        scheduleSave();
-      }
+      // 同名续档(v1.5.7 收紧): 仅当旧座位无人占用且筹码为正时复用——
+      // 否则测试期破产的 0 筹码死座会被后来同名玩家继承(实测: 玩家进桌 0 筹码)
+      let p = room.players.find(x => !x.isBot && x.name === (name || '玩家') && !x.sid && x.chips > 0);
+      if (p) { p.sid = sock.id; if (face) p.face = face; }
+      else { p = room.addPlayer(sock.id, 'p' + (room._pSeq = (room._pSeq || 0) + 1), name || '玩家', face, false); scheduleSave(); }
       const target = Math.min(botCount || 0, room.maxPlayers - 1);
       if (target > 0) room.fillBots(room.players.length + target);
       sock.emit('joined', { pid: p.pid, roomId, state: publicState(room) });
@@ -390,7 +431,7 @@ io.on('connection', (sock) => {
       // 中途入座(v1.5.6): 人/bot 通用——同名者接回原座位(刷新恢复,补发私牌), 新座位本轮坐出、下局正式参战
       let p = bot
         ? room.players.find(x => x.isBot && x.name === (name || ''))
-        : room.players.find(x => !x.isBot && x.name === (name || '玩家'));
+        : room.players.find(x => !x.isBot && x.name === (name || '玩家') && !x.sid && x.chips > 0);
       if (p) {
         p.sid = sock.id;
         if (face) p.face = face;
