@@ -9,6 +9,7 @@ const E = require('./engine.js');
 const PORT = process.env.PORT || 3010;
 const MY_TURN_SEC = 15, AI_TURN_SEC = 5;
 const ROOM_CAP = +process.env.ROOM_CAP || 8;                 // 真人房上限（不含 bot 自嗨房与大厅）
+const BOT_SECRET = process.env.MUY_BOT_SECRET || 'mu-bot-2026';  // bot 身份共享密钥(v1.5.12): fleet 与服务端一致才认 isBot
 const ROOM_EMPTY_MS = +process.env.ROOM_EMPTY_MS || 5*60*1000; // 最后一个真人走后多久销毁
 const SWEEP_MS = +process.env.SWEEP_MS || 60*1000;
 
@@ -78,7 +79,7 @@ app.get('/api/rooms/:roomId', (req, res) => {
   const room = rooms.get(req.params.roomId);
   if (!room) return res.status(404).json({ error: 'not found' });
   const showing = room.phase === 'reveal' || room.phase === 'settle';
-  res.json({ roomId: room.id, phase: room.phase, round: room.round, pot: room.pot,
+  res.json({ roomId: room.id, phase: room.phase, round: room.round, pot: room.pot, raised: [...room.raised],
     players: room.players.map(p => ({ pid: p.pid, name: p.name, chips: p.chips,
       // 防偷看(v1.5.5): 非摊牌阶段只回牌数不回牌面, 否则轮询本端点可作弊看牌
       cards: showing ? p.cards : p.cards.map(() => ({ hidden: true })),
@@ -201,7 +202,12 @@ setInterval(() => {
 
 /* ==================== 广播 ==================== */
 const tierAgg = {};   // 段位收益比累计: {tier: {net, stake}} — 内存态，重启清零重新累计
-function broadcast(room, event, data) { io.to(room.id).emit(event, data); }
+const crypto = require('crypto');
+function broadcast(room, event, data) {
+  // 所有游戏事件自动带 roomId(v1.5.12 P1-5): 客户端拒收他房事件, 防换房后旧房消息污染新桌
+  if (data && typeof data === 'object' && !data.roomId) data.roomId = room.id;
+  io.to(room.id).emit(event, data);
+}
 function publicState(room) {
   return {
     roomId: room.id, phase: room.phase, round: room.round, pot: room.pot,
@@ -322,7 +328,7 @@ function reveal(room) {
   room.phase = 'reveal';
   broadcast(room, 'phase', { phase: 'reveal' });
   broadcast(room, 'reveal_all', { hands: room.players.map(p => ({ pid: p.pid, name: p.name, cards: p.cards })) });
-  const active = room.players.filter(p => p.cards.length > 0);   // 中途入座坐出者不参与结算
+  const active = room.players.filter(p => p.cards.length > 0 && !p.folded);   // 中途入座坐出者+明确离席者不参与结算(v1.5.12 P1-6)
   const { ledger, pairs } = E.settleRound(active);
   for (const p of room.players) p.chips += ledger[p.id] || 0;
   // 段位收益比累计（v1.5.2）：roi = 累计净收益/累计投入(底注×局数)，按段位观测"谁更聪明"
@@ -359,7 +365,7 @@ function nextRound(room) {
 
 /* ==================== Socket 事件 ==================== */
 io.on('connection', (sock) => {
-  sock.on('join_room', ({ roomId, name, face, botCount, bot, ante, tier }) => {
+  sock.on('join_room', ({ roomId, name, face, botCount, bot, ante, tier, botSecret, token }) => {
     // 单连接单座：已在别的房坐着，先按离场处理（换桌语义）
     for (const r of rooms.values()) {
       const prev = r.players.find(x => x.sid === sock.id);
@@ -368,6 +374,8 @@ io.on('connection', (sock) => {
         else { prev.folded = true; prev.stake = 0; prev.sid = null; }
         broadcast(r, 'room_state', publicState(r));
       }
+      // 退出旧广播组(v1.5.12 P1-5): 防旧房消息污染新桌
+      if (r.id !== roomId) sock.leave(r.id);
     }
     // 真人匹配(v1.5.7): 落 lobby/目标房不存在/已满时, 从 bot 房腾座——踢掉最弱 bot(弃牌优先→筹码最低), 保证真人必有座位
     if (!bot && roomId === 'lobby') {
@@ -419,12 +427,17 @@ io.on('connection', (sock) => {
       // 同名续档：同名字真人复用旧座位（页面刷新/服务重启后筹码不重开）
       // 同名续档(v1.5.7 收紧): 仅当旧座位无人占用且筹码为正时复用——
       // 否则测试期破产的 0 筹码死座会被后来同名玩家继承(实测: 玩家进桌 0 筹码)
-      let p = room.players.find(x => !x.isBot && x.name === (name || '玩家') && !x.sid && x.chips > 0);
+      // 同名续档须凭证(v1.5.12 P0-1): 只有持有该座位 token 的客户端才能接回, 防昵称冒领
+      let p = room.players.find(x => !x.isBot && x.name === (name || '玩家') && !x.sid && x.chips > 0 && x.token && x.token === token);
       if (p) { p.sid = sock.id; if (face) p.face = face; }
-      else { p = room.addPlayer(sock.id, 'p' + (room._pSeq = (room._pSeq || 0) + 1), name || '玩家', face, false); scheduleSave(); }
+      else {
+        p = room.addPlayer(sock.id, 'p' + (room._pSeq = (room._pSeq || 0) + 1), name || '玩家', face, false);
+        p.token = crypto.randomBytes(16).toString('hex');
+        scheduleSave();
+      }
       const target = Math.min(botCount || 0, room.maxPlayers - 1);
       if (target > 0) room.fillBots(room.players.length + target);
-      sock.emit('joined', { pid: p.pid, roomId, state: publicState(room) });
+      sock.emit('joined', { pid: p.pid, roomId, state: publicState(room), token: p.token });
       broadcast(room, 'room_state', publicState(room));
       // lobby 是等人区/入口, 永不开局(v1.5.10: 实测 lobby 被残留账号坐满后打了 27 局)
       if (roomId !== 'lobby' && room.canStart() && !room._startTimer) {
@@ -435,20 +448,22 @@ io.on('connection', (sock) => {
       }
     } else if (!room.isFull()) {
       // 中途入座(v1.5.6): 人/bot 通用——同名者接回原座位(刷新恢复,补发私牌), 新座位本轮坐出、下局正式参战
+      // bot 复用必须受信; 真人复用必须持座位凭证(v1.5.12 P0-1: 堵昵称冒领取私牌)
+      const trusted = !!bot && (botSecret || '') === BOT_SECRET;
       let p = bot
-        ? room.players.find(x => x.isBot && x.name === (name || ''))
-        : room.players.find(x => !x.isBot && x.name === (name || '玩家') && !x.sid && x.chips > 0);
+        ? (trusted ? room.players.find(x => x.isBot && x.name === (name || '')) : null)
+        : room.players.find(x => !x.isBot && x.name === (name || '玩家') && !x.sid && x.chips > 0 && x.token && x.token === token);
       if (p) {
         p.sid = sock.id;
         if (face) p.face = face;
-        if (tier !== undefined && bot) p.tier = tier;
+        if (tier !== undefined && trusted) p.tier = tier;
       } else {
-        p = room.addPlayer(sock.id, 'p' + (room._pSeq = (room._pSeq || 0) + 1), name || '玩家', face, !!bot);
-        if (tier !== undefined) p.tier = tier;
+        p = room.addPlayer(sock.id, 'p' + (room._pSeq = (room._pSeq || 0) + 1), name || '玩家', face, trusted);
         if (room.phase !== 'waiting') { p.folded = true; p.stake = 0; }
         scheduleSave();
       }
-      sock.emit('joined', { pid: p.pid, roomId, state: publicState(room) });
+      p.token = crypto.randomBytes(16).toString('hex');   // 每次入座刷新凭证, 旧凭证立即作废
+      sock.emit('joined', { pid: p.pid, roomId, state: publicState(room), token: p.token });
       if (p.cards.length && room.phase !== 'waiting' && room.phase !== 'betting_confirm') sock.emit('your_cards', { cards: p.cards });
       broadcast(room, 'room_state', publicState(room));
     } else { room.spectators.add(sock.id); sock.emit('spectator', { roomId, state: publicState(room) }); }
@@ -465,32 +480,34 @@ io.on('connection', (sock) => {
     const p = room.addPlayer(sock.id, 'p' + (room._pSeq = (room._pSeq || 0) + 1), name || '房主', face);
     room.fillBots(botCount || 3);
     scheduleSave();
-    sock.emit('room_created', { roomId, pid: p.pid, state: publicState(room) });
+    p.token = crypto.randomBytes(16).toString('hex');
+    sock.emit('room_created', { roomId, pid: p.pid, state: publicState(room), token: p.token });
     broadcast(room, 'room_state', publicState(room));
     room._startTimer = setTimeout(() => {
       const r = rooms.get(roomId);
       if (r && r.phase === 'waiting' && r.canStart()) { delete r._startTimer; startRound(r); }
     }, 3000);
   });
-  sock.on('toggle_raise', ({ roomId, pid }) => {
+  sock.on('toggle_raise', ({ roomId, pid, token }) => {
     const room = rooms.get(roomId); if (!room) return;
     const p = room.findPlayer(pid);
-    if (!p || p.sid !== sock.id) return;   // 举手也只限本人
+    if (!p || p.sid !== sock.id || p.token !== token) return;   // 举手只限本人+凭证
     if (room.raised.has(pid)) room.raised.delete(pid); else room.raised.add(pid);
     broadcast(room, 'raise_update', { pid, raised: room.raised.has(pid) });
     broadcast(room, 'room_state', publicState(room));
   });
-  sock.on('player_action', ({ roomId, pid, action }) => {
+  sock.on('player_action', ({ roomId, pid, action, token }) => {
     const room = rooms.get(roomId); if (!room) return;
     const p = room.findPlayer(pid);
-    if (!p || p.sid !== sock.id) return;   // 只能动自己的牌（防替他人出牌）
+    if (!p || p.sid !== sock.id) return;        // 只能动自己的牌（防替他人出牌）
+    if (p.token !== token) return;              // 凭证校验(v1.5.12 P0-1): token 随每次入座刷新
     playerAction(room, pid, action, false);
   });
-  sock.on('leave_room', ({ roomId, pid }) => {
+  sock.on('leave_room', ({ roomId, pid, token }) => {
     // 优雅离场：等待中直接摘座；局中标记坐出（不参决策/不结算），座位释放
     const room = rooms.get(roomId); if (!room) return;
     const p = room.findPlayer(pid);
-    if (!p || p.sid !== sock.id) return;
+    if (!p || p.sid !== sock.id || p.token !== token) return;
     if (room.phase === 'waiting') room.removePlayer(pid);
     else { p.folded = true; p.stake = 0; p.sid = null; }
     broadcast(room, 'room_state', publicState(room));
@@ -501,10 +518,12 @@ io.on('connection', (sock) => {
       if (p) { p.sid = null; break; }
     }
   });
-  sock.on('reconnect_player', ({ roomId, pid }) => {
+  sock.on('reconnect_player', ({ roomId, pid, token }) => {
     const room = rooms.get(roomId);
     const p = room && room.findPlayer(pid);
     if (!p) return;
+    // 凭证校验(v1.5.12 P0-1): 无凭证不能认领断线座位（堵"重连只凭公开玩家ID"接管）
+    if (p.token && p.token !== token) return;
     // 防劫持：座位已被其他活跃连接占着（pid 是别人的），拒绝认领
     if (p.sid && p.sid !== sock.id) return;
     // 单连接单座：该连接已坐在同房别的座位上，不能重复认领
@@ -529,7 +548,7 @@ function serializeRooms() {
     stats: r.stats,
     players: r.players.map(p => ({
       pid: p.pid, name: p.name, face: p.face, isBot: p.isBot,
-      chips: p.chips, personality: p.personality || null,
+      chips: p.chips, personality: p.personality || null, token: p.token || null,
     })),
   }));
 }
@@ -572,6 +591,7 @@ function restoreRooms() {
         const p = room.addPlayer(null, sp.pid, sp.name, sp.face, !!sp.isBot);
         p.chips = sp.chips;
         if (sp.personality) p.personality = sp.personality;
+        if (sp.token) p.token = sp.token;
       }
       room.phase = 'waiting';
       rooms.set(room.id, room);

@@ -428,7 +428,7 @@ const MY_AVATAR="assets/avatars/avatar-m3.png";   // 阿洲默认头像
 
 /* ---------- 状态(socket 数据驱动) ---------- */
 const S={roomId:null,myPid:null,players:[],phase:"idle",round:0,pot:0,ante:200,
-  raised:new Set(),myTurn:false,
+  raised:new Set(),myTurn:false,token:null,
   ringOwner:null,ringDeadline:0,ringTotal:0};
 
 /* ---------- 渲染(单机版同款) ---------- */
@@ -626,7 +626,7 @@ function updateRaiseBtn(){
 }
 function emitAction(action){
   if(!sock||!S.myTurn) return;
-  sock.emit("player_action",{roomId:S.roomId,pid:S.myPid,action});
+  sock.emit("player_action",{roomId:S.roomId,pid:S.myPid,action,token:S.token});
 }
 $("#btn-stop").onclick=()=>{ if(S.myTurn) emitAction("pass"); };
 $("#btn-draw").onclick=()=>{
@@ -637,7 +637,7 @@ $("#btn-draw").onclick=()=>{
   if(S.raised.has(me.pid)){ S.raised.delete(me.pid); setBanner("已撤销举手"); }
   else { S.raised.add(me.pid); setBanner("已举手要补牌，全桌可见"); }
   updateRaiseBtn(); renderSeats(); renderMe();
-  if(sock) sock.emit("toggle_raise",{roomId:S.roomId,pid:S.myPid});
+  if(sock) sock.emit("toggle_raise",{roomId:S.roomId,pid:S.myPid,token:S.token});
 };
 
 /* ---------- Socket.io ---------- */
@@ -649,8 +649,8 @@ let sock=null;
 
 /* 断线重连续座: 座位上下文存 sessionStorage, 重连后 reconnect_player 认领 */
 const SEAT_KEY="musaiyu_seat_v1";
-function saveSeat(roomId,pid){ try{sessionStorage.setItem(SEAT_KEY,JSON.stringify({roomId,pid}));}catch(e){} }
-function loadSeat(){ try{const d=JSON.parse(sessionStorage.getItem(SEAT_KEY)||"null");return d&&d.roomId&&d.pid?d:null;}catch(e){return null;} }
+function saveSeat(roomId,pid,token){ try{sessionStorage.setItem(SEAT_KEY,JSON.stringify({roomId,pid,token}));}catch(e){} }
+function loadSeat(){ try{const d=JSON.parse(sessionStorage.getItem(SEAT_KEY)||"null");return d&&d.roomId&&d.pid&&d.token?d:null;}catch(e){return null;} }
 function clearSeat(){ try{sessionStorage.removeItem(SEAT_KEY);}catch(e){} }
 
 /* 进门快速匹配(v1.5.6): 自动坐进人最多的 bot 房(留座设计每房必有空位), 大厅只作兜底 */
@@ -712,7 +712,7 @@ function connect(){
       // 断线重连续座: 认领旧座位; 2.5s 内没收到 rejoined 视为座位已失效(房被回收), 回退快速匹配
       let recovered=false;
       sock.once("rejoined",()=>{ recovered=true; });
-      sock.emit("reconnect_player",{roomId:seat.roomId,pid:seat.pid});
+      sock.emit("reconnect_player",{roomId:seat.roomId,pid:seat.pid,token:seat.token});
       setTimeout(()=>{ if(!recovered&&!S.myPid&&sock&&sock.connected){ clearSeat(); quickJoin(); } },2500);
     }else{
       quickJoin();
@@ -722,7 +722,7 @@ function connect(){
   sock.on("disconnect",()=>{ $("#conn").textContent="断开"; $("#conn").className=""; $("#reconnect").classList.add("show"); });
 
   sock.on("joined",d=>{
-    S.myPid=d.pid; S.roomId=d.roomId; saveSeat(d.roomId,d.pid);
+    S.myPid=d.pid; S.roomId=d.roomId; S.token=d.token; saveSeat(d.roomId,d.pid,d.token);
     applyState(d.state);
     setBanner(d.state.phase==="waiting"?"等待玩家加入…":"对局进行中");
   });
@@ -743,7 +743,7 @@ function connect(){
     setBanner(d.state&&d.state.phase==="waiting"?"等待玩家加入…":"已重新接入对局");
   });
   sock.on("room_created",d=>{
-    S.myPid=d.pid; S.roomId=d.roomId; saveSeat(d.roomId,d.pid);
+    S.myPid=d.pid; S.token=d.token; S.roomId=d.roomId; saveSeat(d.roomId,d.pid);
     applyState(d.state); setBanner("房间已创建 · 等待玩家加入…");
   });
   sock.on("room_rejected",d=>{ setBanner(d.reason||"无法加入房间"); $("#conn").textContent="满员"; clearSeat(); });
@@ -792,7 +792,7 @@ function connect(){
         startRing(d.timeout||15,()=>{},S.myPid);
         setTimeout(()=>{
           S.myTurn=false; updateRaiseBtn();
-          if(sock) sock.emit("player_action",{roomId:S.roomId,pid:S.myPid,action:"draw"});
+          if(sock) sock.emit("player_action",{roomId:S.roomId,pid:S.myPid,action:"draw",token:S.token});
         }, 900);
         return;
       }
@@ -800,7 +800,7 @@ function connect(){
       renderHand(); renderSeats(); updateRaiseBtn();
       startRing(d.timeout||15,()=>{ S.myTurn=false; updateRaiseBtn();
         // 超时自动过(服务端 decided 集合会去重, 不怕双发; 不能走 emitAction, 它要求 myTurn)
-        if(sock) sock.emit("player_action",{roomId:S.roomId,pid:S.myPid,action:"pass"});
+        if(sock) sock.emit("player_action",{roomId:S.roomId,pid:S.myPid,action:"pass",token:S.token});
       },S.myPid);
     }else{
       const p=S.players.find(x=>x.pid===d.pid);
@@ -849,7 +849,7 @@ function connect(){
 
 /* 页面离开: 优雅离场(等待中摘座/局中坐出) */
 window.addEventListener("pagehide",()=>{
-  if(sock&&S.roomId&&S.myPid) sock.emit("leave_room",{roomId:S.roomId,pid:S.myPid});
+  if(sock&&S.roomId&&S.myPid) sock.emit("leave_room",{roomId:S.roomId,pid:S.myPid,token:S.token});
 });
 
 /* ---------- 结算面板(单机版三视图: 排行/我的对局/对阵表, 数据来自服务端 settle_result) ---------- */

@@ -155,7 +155,7 @@ class Session {
       // 服务重启/掉线重连：先试续座（保留筹码与 pid），不行再当新客进房
       if (this.myPid && this.room) {
         this.mode = 'rejoin';
-        s.emit('reconnect_player', { roomId: this.room, pid: this.myPid });
+        s.emit('reconnect_player', { roomId: this.room, pid: this.myPid, token: this.token });
         setTimeout(() => { if (this.mode === 'rejoin') this.join(this.room, this.ante); }, 2500);
       } else this.enter();
     });
@@ -168,7 +168,7 @@ class Session {
     s.on('your_cards', d => { this.myCards = d.cards || []; });
     s.on('player_action', d => { if (d.pid === this.myPid && d.timeout) this.track('timeout_pass'); });   // 服务端托管代打(审计盲区补全, v1.5.1)
     s.on('decision_turn', d => { dlog(`decision_turn ${d.name} pid=${d.pid} 我=${this.myPid}`); if (d.pid === this.myPid) this.act(); });
-    s.on('round_start', () => { this.myCards = []; if (Math.random() < 0.15) setTimeout(() => this.safeEmit('toggle_raise', { roomId: this.room, pid: this.myPid }), 300 + Math.random() * 1200); });
+    s.on('round_start', () => { this.myCards = []; if (Math.random() < 0.15) setTimeout(() => this.safeEmit('toggle_raise', { roomId: this.room, pid: this.myPid, token: this.token }), 300 + Math.random() * 1200); });
     s.on('room_state', st => { const me = st.players.find(p => p.pid === this.myPid); if (me && me.chips !== this.chips) { this.track('chips', { from: this.chips, to: me.chips }); this.chips = me.chips;
       // 破产即离场（审计v1.4.2: 原先只在 dwell 到期时查，0 筹码僵尸会陪跑多局）
       if (this.chips < BANKRUPT && !this.done) setTimeout(() => this.leave(), 800 + Math.random() * 1500);
@@ -217,7 +217,7 @@ class Session {
       if (!this.sock.connected) return;
       dlog(`出牌 ${this.identity.name}[${t.name}] → ${action}`);
       this.track('action', { action, cards: this.myCards.length, tier: this.tier });
-      this.safeEmit('player_action', { roomId: this.room, pid: this.myPid, action });
+      this.safeEmit('player_action', { roomId: this.room, pid: this.myPid, action, token: this.token });
       stats.actions++;
     }, delay);
   }
@@ -265,7 +265,7 @@ class Session {
     if (this.done) return;
     if (immediate) return this.finish('abrupt');
     if (Math.random() < 0.7) {
-      this.safeEmit('leave_room', { roomId: this.room, pid: this.myPid });
+      this.safeEmit('leave_room', { roomId: this.room, pid: this.myPid, token: this.token });
       setTimeout(() => this.finish('graceful'), 300);
     } else this.finish('abrupt');
   }
