@@ -45,10 +45,10 @@ function fetchStats() {
   });
 }
 
-/* 加权选房：优先人多的 bot_ 房（有空位），没有就开新 bot_ 房 */
+/* 加权选房：优先人多的 bot_ 房，但只进 ≤PER-1 的房（给真人留 1 个空座） */
 async function pickRoom(exclude) {
   const d = await fetchStats();
-  const rooms = (d?.rooms || []).filter(r => r.roomId.startsWith('bot_') && r.roomId !== exclude && r.online < 9);
+  const rooms = (d?.rooms || []).filter(r => r.roomId.startsWith('bot_') && r.roomId !== exclude && r.online < PER);
   if (!rooms.length) return null;
   const total = rooms.reduce((a, r) => a + r.online + 1, 0);
   let x = Math.random() * total;
@@ -110,9 +110,13 @@ class Session {
   async enter() {
     if (this.roomHint) this.join(this.roomHint.roomId, this.roomHint.ante);
     else {
-      const r = await pickRoom();
-      if (r) this.join(r.roomId, r.ante);
-      else this.join('bot_r1', 200);
+      // 全满就等一会再挑（满房在 churn 下会腾出位置），最多等 5 轮
+      for (let i = 0; i < 5 && !this.done; i++) {
+        const r = await pickRoom();
+        if (r) return this.join(r.roomId, r.ante);
+        await new Promise(res => setTimeout(res, 8000));
+      }
+      if (!this.done) this.join('bot_r1', 200);
     }
   }
 
