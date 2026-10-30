@@ -62,6 +62,46 @@ function newIdentity() {
   return { name: NAMES[n % NAMES.length] + (n >= NAMES.length ? String(Math.floor(n / NAMES.length) + 1) : ''), face: FACES[n % FACES.length] };
 }
 
+/* ============ 段位算法（用户要求：分级算法挂不同 bot，L3 均值应恒压 L2/L1，用于观测群体是否变聪明） ============ */
+const GOOD = ["tianGong9","tianGong8","shuangGui","sanGui","zhenBaoZi","tongHuaShun","hunShun"];
+const TIERS = {
+  0: { name: 'L0随机',
+       decide: () => Math.random() < 0.5 ? 'draw' : 'pass' },
+  1: { name: 'L1基础',
+       decide: (cards) => {
+         const r = E.classifyHand(cards);
+         const good = GOOD.includes(r.type) || r.pts >= 7;
+         return good ? 'pass' : (Math.random() < 0.8 ? 'draw' : 'pass');
+       } },
+  2: { name: 'L2进阶',
+       decide: (cards) => {
+         const r = E.classifyHand(cards);
+         if (GOOD.includes(r.type)) return 'pass';
+         if (r.pts >= 8) return 'pass';
+         if (r.pts >= 6) return Math.random() < 0.3 ? 'draw' : 'pass';   // 6-7 点小概率补
+         return 'draw';
+       } },
+  3: { name: 'L3计数',
+       decide: (cards) => {
+         const jokers = cards.filter(c => c.joker).length;
+         const r = E.classifyHand(cards);
+         if (jokers > 0) return r.pts >= 8 ? 'pass' : 'draw';            // 有鬼先补冲天公
+         if (r.pts === 0 && !GOOD.includes(r.type)) return 'draw';        // 0 点赌翻盘/木虱
+         if (r.pts >= 7) return 'pass';
+         const gap = 9 - r.pts;                                          // 离 9 越远越要补
+         return Math.random() < Math.min(0.95, 0.35 + gap * 0.15) ? 'draw' : 'pass';
+       } },
+};
+const TIER_KEYS = Object.keys(TIERS).map(Number);
+/* 分段战绩（tierstats.json）：跨会话累计，供"群体是否变聪明"趋势观测 */
+const TIERSTATS_FILE = path.join(__dirname, 'tierstats.json');
+let tierStats = {};
+try { tierStats = JSON.parse(fs.readFileSync(TIERSTATS_FILE, 'utf8')); } catch (e) {}
+function tierRecord(tier) { return tierStats[tier] ||= { sessions: 0, netSum: 0, finalChipsSum: 0, bankrupts: 0 }; }
+function saveTierStats() {
+  try { fs.writeFileSync(TIERSTATS_FILE, JSON.stringify(tierStats, null, 1)); } catch (e) {}
+}
+
 const DBG = !!process.env.MUY_DBG;
 const dlog = (...a) => { if (DBG) log('[dbg]', ...a); };
 const fs = require('fs');
@@ -82,14 +122,16 @@ class Session {
   constructor(opts = {}) {
     this.identity = opts.identity || newIdentity();
     this.roomHint = opts.roomHint || null;   // {roomId, ante}
+    this.tier = opts.tier ?? (seq % TIER_KEYS.length);   // 段位：新号均匀分布，晋升/降级沿会话传递
     this.speed = 0.6 + Math.random() * 0.8;  // 拟人节奏系数
     this.myPid = opts.pid || null;
     this.myCards = [];
     this.chips = null;
+    this.startChips = null;
     this.done = false; this.seated = false;
     this.tid = `${this.identity.name}-${Date.now().toString(36)}-${Math.floor(Math.random()*999)}`;
     stats.active++;
-    this.track('spawn', { room: this.roomHint?.roomId, pid: this.myPid, chips: this.chips });
+    this.track('spawn', { room: this.roomHint?.roomId, pid: this.myPid, chips: this.chips, tier: this.tier });
     this.open();
   }
 
@@ -112,7 +154,7 @@ class Session {
     s.on('connect_error', () => { stats.connectErr++; });
     s.on('disconnect', () => { if (!this.done) { /* 非自愿断线（服务重启/硬断）按掉线离场，走统一善后 */ this.finish('abrupt'); } });
     s.on('rejoined', d => { this.mode = null; this.seated = true; stats.seated++; this.adopt(d.state); this.armDwell(); });
-    s.on('joined', d => { dlog(`joined ${this.identity.name} pid=${d.pid} 房=${d.roomId}`); this.myPid = d.pid; this.room = d.roomId; this.seated = true; stats.seated++; this.adopt(d.state); this.track('joined'); this.armDwell(); });
+    s.on('joined', d => { dlog(`joined ${this.identity.name} pid=${d.pid} 房=${d.roomId}`); this.myPid = d.pid; this.room = d.roomId; this.seated = true; stats.seated++; this.adopt(d.state); this.track('joined', { tier: this.tier }); this.armDwell(); });
     s.on('spectator', () => { dlog(`spectator ${this.identity.name}`); this.track('spectator'); this.leave(true); });            // 房满了，换个地方
     s.on('room_rejected', d => { log(`拒入: ${d?.reason || ''}`); this.leave(true); });
     s.on('your_cards', d => { this.myCards = d.cards || []; });
@@ -127,7 +169,10 @@ class Session {
 
   adopt(state) {
     const me = state.players.find(p => p.pid === this.myPid);
-    if (me) this.chips = me.chips;
+    if (me) {
+      this.chips = me.chips;
+      if (this.startChips === null) this.startChips = me.chips;   // 首次快照=本会话基准
+    }
   }
 
   async enter() {
@@ -145,26 +190,24 @@ class Session {
 
   join(roomId, ante) {
     this.room = roomId; this.ante = ante;
-    this.safeEmit('join_room', { roomId, name: this.identity.name, face: this.identity.face, bot: true, ante });
+    this.safeEmit('join_room', { roomId, name: this.identity.name, face: this.identity.face, bot: true, ante, tier: this.tier });
   }
 
   safeEmit(ev, data) { try { this.sock.emit(ev, data); } catch (e) {} }
 
-  /* 决策：有 engine 按牌力（好牌停牌/差牌 80% 要牌），否则随机；延迟 1.5~9.5s × 节奏 */
+  /* 决策：按段位算法（myCards 由 your_cards 私发填充，v1.4.2 起有真手牌） */
   act() {
-    let action = Math.random() < 0.7 ? 'draw' : 'pass';
-    if (E && this.myCards.length) {
-      try {
-        const r = E.classifyHand(this.myCards);
-        const good = ["tianGong9","tianGong8","shuangGui","sanGui","zhenBaoZi","tongHuaShun","hunShun"].includes(r.type) || r.pts >= 7;
-        action = good ? 'pass' : (Math.random() < 0.8 ? 'draw' : 'pass');
-      } catch (e) {}
-    }
+    let action = 'pass';
+    const t = TIERS[this.tier] || TIERS[0];
+    try {
+      if (!E || !this.myCards.length) action = TIERS[0].decide();          // 无引擎/无牌退化随机
+      else action = t.decide(this.myCards);
+    } catch (e) { action = TIERS[0].decide(); }
     const delay = (1500 + Math.random() * 8000) * this.speed;
     setTimeout(() => {
       if (!this.sock.connected) return;
-      dlog(`出牌 ${this.identity.name} → ${action}`);
-      this.track('action', { action, cards: this.myCards.length });
+      dlog(`出牌 ${this.identity.name}[${t.name}] → ${action}`);
+      this.track('action', { action, cards: this.myCards.length, tier: this.tier });
       this.safeEmit('player_action', { roomId: this.room, pid: this.myPid, action });
       stats.actions++;
     }, delay);
@@ -190,12 +233,22 @@ class Session {
     } catch (e) { try { this.sock.disconnect(); } catch (e2) {} }
     const bankrupt = this.chips !== null && this.chips < BANKRUPT;
     if (bankrupt) { log(`${this.identity.name} 破产(筹码${this.chips}) → 换新号`); this.track('bankrupt'); }
+    // 分段战绩累计 + 晋降级（赢≥1.5倍升段 / 破产降段）→ 群体向高级自发漂移
+    const T = tierRecord(this.tier);
+    T.sessions++; T.finalChipsSum += this.chips ?? 0;
+    T.netSum += (this.chips ?? 0) - (this.startChips ?? 0);
+    if (bankrupt) T.bankrupts++;
+    saveTierStats();
+    const promote = this.chips !== null && this.startChips !== null && this.chips >= this.startChips * 1.5 && this.tier < 3;
+    const demote = bankrupt && this.tier > 0;
+    const nextTier = promote ? this.tier + 1 : demote ? this.tier - 1 : this.tier;
+    if (nextTier !== this.tier) { log(`${this.identity.name} ${TIERS[this.tier].name}→${TIERS[nextTier].name}(${promote ? '晋升' : '降级'})`); this.track('tier_shift', { from: this.tier, to: nextTier }); }
     const gap = rand(REGAP);
     setTimeout(() => {
       stats.reentries++;
       if (!bankrupt && this.myPid && this.room && Math.random() < 0.6) {
-        new Session({ identity: this.identity, roomHint: { roomId: this.room, ante: this.ante }, pid: this.myPid });
-      } else new Session({});
+        new Session({ identity: this.identity, roomHint: { roomId: this.room, ante: this.ante }, pid: this.myPid, tier: nextTier });
+      } else new Session({ tier: nextTier });
     }, gap);
   }
 
@@ -226,8 +279,18 @@ function canary() {
 async function patrol() {
   const d = await fetchStats();
   const mem = process.memoryUsage();
-  if (d) log(`[巡检] 会话=${stats.active} 在座=${stats.seated} 房间=${d.totalRooms}(bot房${(d.rooms || []).filter(r => r.roomId.startsWith('bot_')).length}) 在线=${d.totalOnline} 退出=${stats.exits}(优雅${stats.graceful}/硬断${stats.abrupt}) 回归=${stats.reentries} 出牌=${stats.actions} 回收=${d.totalRecycled ?? 0} RSS=${(mem.rss / 1048576).toFixed(1)}M`);
-  else log(`[巡检] 服务端不可达 connectErr=${stats.connectErr}`);
+  if (d) {
+    log(`[巡检] 会话=${stats.active} 在座=${stats.seated} 房间=${d.totalRooms}(bot房${(d.rooms || []).filter(r => r.roomId.startsWith('bot_')).length}) 在线=${d.totalOnline} 退出=${stats.exits}(优雅${stats.graceful}/硬断${stats.abrupt}) 回归=${stats.reentries} 出牌=${stats.actions} 回收=${d.totalRecycled ?? 0} RSS=${(mem.rss / 1048576).toFixed(1)}M`);
+    // 分段战绩快照（观测"L3 均值 > L2 > L1 > L0"是否成立/群体是否变聪明）
+    const tiers = d.tiers || {};
+    const line = TIER_KEYS.map(t => {
+      const s = tierStats[t] || { sessions: 0, netSum: 0, bankrupts: 0 };
+      const avgNet = s.sessions ? (s.netSum / s.sessions).toFixed(0) : '-';
+      const live = tiers[t] ? `${tiers[t].players}人` : '0人';
+      return `${TIERS[t].name}:场均${avgNet}(破产${s.bankrupts},${live})`;
+    }).join(' | ');
+    log(`[段位] ${line}`);
+  } else log(`[巡检] 服务端不可达 connectErr=${stats.connectErr}`);
   // 缺口补员：在座数低于编制就补（覆盖服务端重启导致的全军覆没）
   const deficit = ROOMS * PER - stats.seated;
   for (let i = 0; i < deficit; i++) setTimeout(() => new Session({}), i * 300);

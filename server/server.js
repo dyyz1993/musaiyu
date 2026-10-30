@@ -35,6 +35,7 @@ app.get('/health', (req, res) => res.json({ ok: true, rooms: rooms.size, uptime:
 app.get('/api/stats', (req, res) => {
   const roomList = [];
   let totalOnline = 0, totalBots = 0, totalRounds = 0, totalTurnover = 0, totalPaid = 0, totalNet = 0, totalChips = 0;
+  const tiers = {};
   for (const room of rooms.values()) {
     const realPlayers = room.players.filter(p => !p.isBot).length;
     totalOnline += room.players.length;
@@ -43,7 +44,13 @@ app.get('/api/stats', (req, res) => {
     totalTurnover += room.stats.turnover;
     totalPaid += room.stats.paid || 0;
     totalNet += room.stats.net || 0;
-    room.players.forEach(p => { totalChips += p.chips; });
+    for (const p of room.players) {
+      totalChips += p.chips;
+      if (p.tier !== undefined && p.tier !== null) {
+        const t = tiers[p.tier] ||= { players: 0, chipsSum: 0 };
+        t.players++; t.chipsSum += p.chips;
+      }
+    }
     roomList.push({
       roomId: room.id, phase: room.phase, round: room.round,
       online: room.players.length, real: realPlayers, bots: room.players.filter(p=>p.isBot).length,
@@ -52,7 +59,9 @@ app.get('/api/stats', (req, res) => {
       betCount: room.stats.betCount,
     });
   }
-  res.json({ rooms: roomList, totalRooms: rooms.size, totalOnline, totalBots, totalRounds, totalTurnover, totalPaid, totalNet, totalChips, totalRecycled: recycled });
+  const tiersOut = {};
+  for (const [t, v] of Object.entries(tiers)) tiersOut[t] = { players: v.players, chipsAvg: Math.round(v.chipsSum / v.players) };
+  res.json({ rooms: roomList, totalRooms: rooms.size, totalOnline, totalBots, totalRounds, totalTurnover, totalPaid, totalNet, totalChips, totalRecycled: recycled, tiers: tiersOut });
 });
 app.get('/api/rooms/:roomId', (req, res) => {
   const room = rooms.get(req.params.roomId);
@@ -183,7 +192,7 @@ function publicState(room) {
     players: room.players.map(p => ({
       pid: p.pid, name: p.name, face: p.face, chips: p.chips,
       cardCount: p.cards.length, banker: p.banker, inTurn: p.inTurn,
-      folded: p.folded, isBot: p.isBot, raised: room.raised.has(p.pid),
+      folded: p.folded, isBot: p.isBot, tier: p.tier ?? null, raised: room.raised.has(p.pid),
       cards: (room.phase === 'reveal' || room.phase === 'settle') ? p.cards : p.cards.map(() => ({ hidden: true })),
     })),
     raised: [...room.raised],
@@ -320,7 +329,7 @@ function nextRound(room) {
 
 /* ==================== Socket 事件 ==================== */
 io.on('connection', (sock) => {
-  sock.on('join_room', ({ roomId, name, face, botCount, bot, ante }) => {
+  sock.on('join_room', ({ roomId, name, face, botCount, bot, ante, tier }) => {
     // 单连接单座：已在别的房坐着，先按离场处理（换桌语义）
     for (const r of rooms.values()) {
       const prev = r.players.find(x => x.sid === sock.id);
@@ -342,8 +351,12 @@ io.on('connection', (sock) => {
     if (room.phase === 'waiting' && !room.isFull()) {
       // 同名续档：同名字真人复用旧座位（页面刷新/服务重启后筹码不重开）
       let p = room.players.find(x => x.name === (name || '玩家') && x.isBot === !!bot);
-      if (p) { p.sid = sock.id; if (face) p.face = face; }
-      else { p = room.addPlayer(sock.id, 'p' + (room._pSeq = (room._pSeq || 0) + 1), name || '玩家', face, !!bot); scheduleSave(); }
+      if (p) { p.sid = sock.id; if (face) p.face = face; if (tier !== undefined) p.tier = tier; }
+      else {
+        p = room.addPlayer(sock.id, 'p' + (room._pSeq = (room._pSeq || 0) + 1), name || '玩家', face, !!bot);
+        if (tier !== undefined) p.tier = tier;
+        scheduleSave();
+      }
       const target = Math.min(botCount || 0, room.maxPlayers - 1);
       if (target > 0) room.fillBots(room.players.length + target);
       sock.emit('joined', { pid: p.pid, roomId, state: publicState(room) });
@@ -357,9 +370,10 @@ io.on('connection', (sock) => {
     } else if (bot && !room.isFull()) {
       // bot 中途入座：本轮坐出（folded、不出注），下一局自动参战
       let p = room.players.find(x => x.isBot && x.name === (name || ''));
-      if (p) { p.sid = sock.id; }
+      if (p) { p.sid = sock.id; if (tier !== undefined) p.tier = tier; }
       else {
         p = room.addPlayer(sock.id, 'p' + (room._pSeq = (room._pSeq || 0) + 1), name || '玩家', face, true);
+        if (tier !== undefined) p.tier = tier;
         p.folded = true; p.stake = 0;
         scheduleSave();
       }
