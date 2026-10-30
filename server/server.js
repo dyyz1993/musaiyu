@@ -71,8 +71,12 @@ app.get('/api/stats', (req, res) => {
 app.get('/api/rooms/:roomId', (req, res) => {
   const room = rooms.get(req.params.roomId);
   if (!room) return res.status(404).json({ error: 'not found' });
+  const showing = room.phase === 'reveal' || room.phase === 'settle';
   res.json({ roomId: room.id, phase: room.phase, round: room.round, pot: room.pot,
-    players: room.players.map(p => ({ pid: p.pid, name: p.name, chips: p.chips, cards: p.cards, banker: p.banker, isBot: p.isBot })) });
+    players: room.players.map(p => ({ pid: p.pid, name: p.name, chips: p.chips,
+      // 防偷看(v1.5.5): 非摊牌阶段只回牌数不回牌面, 否则轮询本端点可作弊看牌
+      cards: showing ? p.cards : p.cards.map(() => ({ hidden: true })),
+      cardCount: p.cards.length, banker: p.banker, isBot: p.isBot })) });
 });
 
 /* 对账端点：全场筹码恒等式 —— 结算净转移和恒为 0；任何偏差即资金 bug（须在 rooms 声明之后注册） */
@@ -160,7 +164,8 @@ class Room {
 
 /* ==================== 房间生命周期：上限 + 空房回收 ==================== */
 function humanRoomCount() {
-  return [...rooms.values()].filter(r => !r.id.startsWith('bot_') && r.id !== 'lobby').length;
+  // 房上限只数"有真人在座"的房(v1.5.5): 纯 bot 房是舰队自持的, 空垃圾房会被回收, 都不该吃掉真人额度
+  return [...rooms.values()].filter(r => !r.id.startsWith('bot_') && r.id !== 'lobby' && r.players.some(p => !p.isBot && p.sid)).length;
 }
 function liveHumans(room) {
   return room.players.filter(p => !p.isBot && p.sid).length;
@@ -290,6 +295,7 @@ async function waitPlayerAction(room, p) {
 function playerAction(room, pid, action, isTimeout = false) {
   const p = room.findPlayer(pid);
   if (!p || room.phase !== 'decision') return;
+  if (room.decided.has(pid)) return;   // 并发双动作(v1.5.5): 已决策过拒绝二次, 防 pass 后立刻 draw 多抽
   const timer = room.timers[pid];
   if (timer) { clearTimeout(timer.timeout); timer.resolve(); delete room.timers[pid]; }
   room.decided.add(pid); p.inTurn = false;

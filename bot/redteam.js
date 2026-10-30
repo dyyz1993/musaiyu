@@ -21,6 +21,7 @@ const SERVER = process.env.MUY_SERVER || 'http://127.0.0.1:3010';
 const PATH = '/musaiyu/socket.io/';
 const REPORT_DIR = path.join(__dirname, 'reports');
 fs.mkdirSync(REPORT_DIR, { recursive: true });
+const flags = {};   // 攻击向量回填的断言标记(被服务端守卫拦住=无标记)
 const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
 
 const mk = () => io(SERVER, { path: PATH, transports: ['websocket'], reconnection: false });
@@ -93,6 +94,46 @@ const vectors = [
     s.emit('player_action', { roomId: 'rt_big', pid: big, action: big });
     await sleep(900); s.disconnect();
   }],
+  ['A9 并发双动作(同pid乱序)', async () => {
+    const s = mk(); await connect(s);
+    let pid = null;
+    s.on('joined', d => { pid = d.pid; });
+    s.emit('join_room', { roomId: 'rt_r1', name: '红队并发', face: '', bot: true });
+    await once(s, 'joined');
+    // 同一 tick 内 pass+draw 混发: 修复后 decided 集合应只认第一个
+    s.emit('player_action', { roomId: 'rt_r1', pid, action: 'pass' });
+    for (let i = 0; i < 6; i++) s.emit('player_action', { roomId: 'rt_r1', pid, action: 'draw' });
+    await sleep(1500);
+    const st = await get('/musaiyu/api/rooms/rt_r1');
+    const me = (st?.players || []).find(p => p.name === '红队并发');
+    if (me && me.cardCount > 3) flags.doubleDraw = me.cardCount;   // >3 张 = 并发竞态漏了
+    s.disconnect();
+  }],
+  ['A10 偷看探测(轮询监控端点)', async () => {
+    // 决策阶段轮询 /api/rooms, 数可见牌面: 修复后非 reveal/settle 应全部 hidden
+    const d = await get('/musaiyu/api/stats');
+    const target = (d?.rooms || []).find(r => r.phase === 'decision' || r.phase === 'dealing') || (d?.rooms || [])[0];
+    if (!target) return;
+    const st = await get('/musaiyu/api/rooms/' + target.roomId);
+    let peekable = 0;
+    for (const p of (st?.players || []))
+      for (const c of (p.cards || [])) if (!c.hidden && (c.suit || c.rank)) peekable++;
+    if (peekable > 0 && st.phase !== 'reveal' && st.phase !== 'settle') flags.peekable = peekable;
+  }],
+  ['A11 跨房窜座断言', async () => {
+    const s = mk(); await connect(s);
+    s.emit('join_room', { roomId: 'rt_x1', name: '红队窜座', face: '', bot: true });
+    await once(s, 'joined');
+    s.emit('join_room', { roomId: 'rt_x2', name: '红队窜座', face: '', bot: true });
+    await once(s, 'joined');
+    await sleep(600);
+    const c1 = await get('/musaiyu/api/rooms/rt_x1');
+    const c2 = await get('/musaiyu/api/rooms/rt_x2');
+    const inBoth = (c1?.players || []).filter(p => p.name === '红队窜座').length
+                 + (c2?.players || []).filter(p => p.name === '红队窜座').length;
+    if (inBoth > 1) flags.multiSeat = inBoth;   // >1 = 同时占两房座位
+    s.disconnect();
+  }],
 ];
 
 (async () => {
@@ -118,7 +159,11 @@ const vectors = [
     `- 内存: ${alive ? `RSS=${(after.mem.rss / 1048576).toFixed(1)}M` : '-'}`, '',
     '| 向量 | 耗时 | 客户端异常 |', '|---|---|---|'];
   for (const r of results) L.push(`| ${r.name} | ${r.ms}ms | ${r.err || '-'} |`);
+  const flagKeys = Object.keys(flags);
+  L.push('', flagKeys.length
+    ? `## ⚠️ 守卫被击穿 ${flagKeys.length} 处\n${flagKeys.map(k => `- ${k}: ${JSON.stringify(flags[k])}`).join('\n')}`
+    : '## ✓ 全部断言通过(无多抽/无可偷看牌/无多座占位)');
   fs.writeFileSync(out, L.join('\n') + '\n');
   log(`报告: ${out}`);
-  process.exit(alive && netOk ? 0 : 1);
+  process.exit(alive && netOk && !flagKeys.length ? 0 : 1);
 })();
