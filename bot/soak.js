@@ -118,7 +118,10 @@ class Session {
     s.on('your_cards', d => { this.myCards = d.cards || []; });
     s.on('decision_turn', d => { dlog(`decision_turn ${d.name} pid=${d.pid} 我=${this.myPid}`); if (d.pid === this.myPid) this.act(); });
     s.on('round_start', () => { this.myCards = []; if (Math.random() < 0.15) setTimeout(() => this.safeEmit('toggle_raise', { roomId: this.room, pid: this.myPid }), 300 + Math.random() * 1200); });
-    s.on('room_state', st => { const me = st.players.find(p => p.pid === this.myPid); if (me && me.chips !== this.chips) { this.track('chips', { from: this.chips, to: me.chips }); this.chips = me.chips; } });
+    s.on('room_state', st => { const me = st.players.find(p => p.pid === this.myPid); if (me && me.chips !== this.chips) { this.track('chips', { from: this.chips, to: me.chips }); this.chips = me.chips;
+      // 破产即离场（审计v1.4.2: 原先只在 dwell 到期时查，0 筹码僵尸会陪跑多局）
+      if (this.chips < BANKRUPT && !this.done) setTimeout(() => this.leave(), 800 + Math.random() * 1500);
+    } });
     s.on('settle_result', d => { const net = (d.net || {})[this.myPid]; if (net !== undefined) this.track('settle', { net }); });
   }
 

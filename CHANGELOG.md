@@ -2,7 +2,15 @@
 
 > 规则：审计/红队每抓到一个问题 → 修复后在此追加一条（版本号 + 日期 + 问题 + 修法 + commit）。
 > 版本号 = MAJOR.MINOR.PATCH；PATCH = 审计修正，MINOR = 功能迭代，MAJOR = 架构变更。
-> 当前版本：**1.4.1**（见最近一条）
+> 当前版本：**1.4.2**（见最近一条）
+
+## [1.4.2] 2026-10-30 · AI 审读抓到两真问题：bot 盲打 + 破产僵尸
+- **来源**：新流程——ZCode 定时任务随机抽用户原始轨迹给 AI 逐条读（不再只跑写死的校验）。首轮抽中「鱼蛋5」42 事件。
+- **问题①**：42 条 action 的 cards 字段全部为 0——服务端发牌从未私发 `your_cards`（单机版有、服务端版丢失），bot 的 myCards 恒空 → engine.js 牌力决策分支从未生效，**80 bot 全程纯随机出牌**。
+- **修法①**：服务端三处补私发——dealCards 起手、单鬼强制补、playerAction 补牌，均 `io.sockets.sockets.get(p.sid).emit('your_cards',{cards})`。本地验证：修复前 cards 恒 0 → 修复后 22/22 条 action cards=2。
+- **问题②**：破产 bot（chips<500）要等 dwell 到期才离场，期间以 0 筹码陪跑 8 局空转（net 全 0/±1）。
+- **修法②**：soak.js 在 room_state 检测到 chips<BANKRUPT 时 0.8~2.3s 内立即触发离场（保留优雅/硬断 70/30 分布）。
+- commit: (本次)
 
 ## [1.4.1] 2026-10-30 · 红队抓到真 bug：销毁房间被定时器复活 + 快照无限还魂
 - **问题**（生产红队压测抓到）：红队 A3/A4 制造的 rt_ 垃圾房在服务端日志显示"已回收"（计数+1），但 API 永远查得到。根因两条链：①`reveal` 尾部的 `setTimeout(nextRound, 6000)` 不看房间死活，sweep 删除后又把 `phase='waiting'` 写回并重建局面（僵尸复活）；②被删房间在闭包定时器里继续 `scheduleSave()`，快照里写回 rt_ 房 → 服务重启 `restoreRooms` 再恢复 → 再回收 → 再写回，无限还魂。

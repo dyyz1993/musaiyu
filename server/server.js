@@ -219,6 +219,8 @@ async function dealCards(room) {
       if (p.isBot && !p.sid) continue;   // 空椅 bot 不发牌
       if (p.cards.length >= E.PRESET.startCards) continue;
       p.cards.push(room.deck.pop());
+      const ps = p.sid && io.sockets.sockets.get(p.sid);
+      if (ps) ps.emit('your_cards', { cards: p.cards });   // 私发手牌(审计v1.4.2: 此前缺失致客户端全程盲打)
       broadcast(room, 'card_dealt', { pid: p.pid, count: p.cards.length });
       await sleep(300);
     }
@@ -226,6 +228,8 @@ async function dealCards(room) {
   for (const p of order) {
     if (p.cards.filter(c => c.joker).length === 1 && p.cards.length < E.PRESET.maxCards) {
       p.cards.push(room.deck.pop());
+      const ps = p.sid && io.sockets.sockets.get(p.sid);
+      if (ps) ps.emit('your_cards', { cards: p.cards });
       broadcast(room, 'forced_draw', { pid: p.pid, name: p.name });
       broadcast(room, 'card_dealt', { pid: p.pid, count: p.cards.length });
       await sleep(300);
@@ -274,7 +278,11 @@ function playerAction(room, pid, action, isTimeout = false) {
   const timer = room.timers[pid];
   if (timer) { clearTimeout(timer.timeout); timer.resolve(); delete room.timers[pid]; }
   room.decided.add(pid); p.inTurn = false;
-  if (action === 'draw' && p.cards.length < E.PRESET.maxCards) p.cards.push(room.deck.pop());
+  if (action === 'draw' && p.cards.length < E.PRESET.maxCards) {
+    p.cards.push(room.deck.pop());
+    const ps = p.sid && io.sockets.sockets.get(p.sid);
+    if (ps) ps.emit('your_cards', { cards: p.cards });   // 补牌后同步手牌
+  }
   broadcast(room, 'player_action', { pid, name: p.name, action });
   broadcast(room, 'room_state', publicState(room));
 }
