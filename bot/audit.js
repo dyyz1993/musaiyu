@@ -88,6 +88,24 @@ async function auditOne(file) {
     first: lines[0]?.t, last: lines[lines.length - 1]?.t, name: lines[0]?.name };
 }
 
+/* 房间状态巡检：相变/座位/牌数合法性 */
+function inspectRooms(g) {
+  const issues = [];
+  const LEGAL = new Set(['waiting', 'betting_confirm', 'dealing', 'decision', 'reveal', 'settle']);
+  for (const r of g.rooms || []) {
+    if (!LEGAL.has(r.phase)) issues.push(`房 ${r.roomId} 非法相变: ${r.phase}`);
+    if (r.online > 9) issues.push(`房 ${r.roomId} 超员: ${r.online}/9`);
+    if (r.round < 0 || r.round > 100000) issues.push(`房 ${r.roomId} 局数异常: ${r.round}`);
+    if (r.chips < 0) issues.push(`房 ${r.roomId} 负筹码总量: ${r.chips}`);
+  }
+  if (g.totalNet !== 0) issues.push(`全局资金不守恒: totalNet=${g.totalNet}`);
+  const rss = (g.mem?.rss || 0) / 1048576;
+  if (rss > 1024) issues.push(`服务端 RSS 异常: ${rss.toFixed(0)}M`);
+  const roomCap = 200;
+  if ((g.rooms || []).length > roomCap) issues.push(`房间数异常膨胀: ${g.rooms.length}`);
+  return issues;
+}
+
 (async () => {
   const files = fs.readdirSync(TRAJ_DIR).filter(f => f.endsWith('.jsonl'));
   if (!files.length) { log('无轨迹可审计'); process.exit(0); }
@@ -97,11 +115,12 @@ async function auditOne(file) {
 
   // 服务端全局对账 + 内存
   const g = await fetchJson('/musaiyu/api/audit');
-  let globalOk = true, memNote = '';
+  let globalOk = true, memNote = '', roomIssues = [];
   if (!g) globalOk = false;
   else {
-    if (Math.abs(g.totalNet) > 0.001) { globalOk = false; }
-    memNote = `RSS=${(g.mem.rss / 1048576).toFixed(1)}M heapUsed=${(g.mem.heapUsed / 1048576).toFixed(1)}M uptime=${g.uptime}s`;
+    roomIssues = inspectRooms(g);
+    if (roomIssues.length) globalOk = false;
+    memNote = `RSS=${(g.mem.rss / 1048576).toFixed(1)}M heapUsed=${(g.mem.heapUsed / 1048576).toFixed(1)}M uptime=${g.uptime}s 房间=${g.rooms.length}`;
   }
 
   const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
@@ -118,13 +137,21 @@ async function auditOne(file) {
   }
   lines.push('');
   if (audit.issues.length) {
-    lines.push(`## ⚠️ 异常 ${audit.issues.length} 条`);
+    lines.push(`## ⚠️ 用户轨迹异常 ${audit.issues.length} 条`);
     audit.issues.slice(0, 20).forEach(x => lines.push(`- ${x}`));
   } else {
     lines.push(`## ✓ 抽样用户轨迹全部通过（结算 ${audit.settles} 次复核）`);
   }
+  lines.push('');
+  lines.push(`## 房间状态巡检（${(g?.rooms || []).length} 房）`);
+  if (roomIssues.length) {
+    lines.push(`❌ ${roomIssues.length} 条:`);
+    roomIssues.slice(0, 20).forEach(x => lines.push(`- ${x}`));
+  } else {
+    lines.push('✓ 全部合法（相变/座位/局数/资金/内存/房间数）');
+  }
   fs.writeFileSync(out, lines.join('\n') + '\n');
   log(`报告: ${out}`);
   log(lines.slice(2).join(' | '));
-  process.exit(audit.issues.length || !globalOk ? 1 : 0);
+  process.exit(audit.issues.length || roomIssues.length || !globalOk ? 1 : 0);
 })();

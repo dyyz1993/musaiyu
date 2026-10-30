@@ -1,0 +1,41 @@
+# 木虱鱼 · 修正记录（审计驱动维护日志）
+
+> 规则：审计/红队每抓到一个问题 → 修复后在此追加一条（版本号 + 日期 + 问题 + 修法 + commit）。
+> 版本号 = MAJOR.MINOR.PATCH；PATCH = 审计修正，MINOR = 功能迭代，MAJOR = 架构变更。
+> 当前版本：**1.4.0**（见最近一条）
+
+## [1.4.0] 2026-10-30 · 混沌测试体系上线（红队 + 房间巡检）
+- **新增** `bot/redteam.js`：8 类攻击向量（替出牌/座位劫持/join 轰炸/非法载荷/未入房出牌/超速连断/重入竞争/巨型载荷），本地全绿——服务端不崩、net=0、垃圾房自动回收、守卫 5/5 不破。
+- **新增** audit.js 房间状态巡检：相变合法性/超员/负筹码/局数越界/RSS>1G/房间数>200。
+- **新增** shanbox cron：`*/10` 审计抽样、`*/30` 红队压测（/etc/cron.d/musaiyu-audit）。
+- commit: (本次)
+
+## [1.3.1] 2026-10-30 · 审计端点 TDZ 500
+- **问题**（audit.js 首跑抓到）：`GET /api/audit` 500——端点内 `const rooms = [...rooms.values()]` 遮蔽外层 `rooms`，自己引用自己触发 TDZ。
+- **修法**：局部变量改名 `list`。
+- commit: f9412ca
+
+## [1.3.0] 2026-10-30 · 监控审计体系（守卫 + 轨迹 + 定时抽查）
+- **新增** 服务端守卫：player_action/toggle_raise 身份校验（防替出牌）、reconnect_player 拒认领有主座位+单连接单座（防劫持，守卫测试 5/5）、join_room 换桌自动释放旧座、rejoined 完整恢复（state+pid+myCards+phase）。
+- **新增** `/api/audit` 对账端点（全场筹码恒等式 totalNet≡0 + RSS）。
+- **新增** soak.js JSONL 行为轨迹（spawn/joined/chips/settle/action/leave/bankrupt）；audit.js 抽样回放对账；shanbox cron `*/10`。
+- commit: f9412ca
+
+## [1.2.1] 2026-10-30 · 舰队重连死循环 + 身份共座
+- **问题**（浸泡压测抓到）：①硬断模拟 + `reconnection:true` = 围观→离场→重连死循环（实测 2.1 万次退出、RSS 761M）；②`seq` 未自增 → 80 bot 全叫"阿豹"，服务端同名续档把全部连接并到一个座位。
+- **修法**：`reconnection:false` + 断线统一走 finish() 善后；`newIdentity()` 内 `seq++`。
+- commit: dcd63dd
+
+## [1.2.0] 2026-10-30 · 机器人改外部 socket.io 客户端舰队
+- **架构**（用户拍板"必须真 WS 网络玩家"）：删服务端内置自嗨机，新建 `bot/soak.js`（对标 yxx soak_lifecycle）：80 bot=10 房×8 人，随机停留/优雅离场 70%/硬断 30%/回归续座/加权选房留真人空座/破产换号/金丝雀/巡检。
+- **连带修复 P0**：`startRound` 从未构建牌堆（deck 恒空，发牌必 pop undefined）——此前被内置自嗨机自带的洗牌掩盖，真人房第一局就会崩。每局 `E.shuffle(E.buildDeck())`。
+- **新增** 服务端中途入座坐出（folded，下轮参战，reveal 只结算有牌者）、leave_room 优雅离场、局间死座清扫。
+- commit: dcd63dd
+
+## [1.1.0] 2026-10-30 · 房间生命周期
+- 真人房上限 8（ROOM_CAP env 可调）、空房 5 分钟自动回收（ROOM_EMPTY_MS）、room_rejected 拒入事件；快照持久化（3s 防抖+SIGTERM+启动恢复+同名续档）。
+- commit: 403d471 / 4fe0366
+
+## [1.0.0] 2026-10-30 · 联机版上线（socket.io v4 服务端 + 双通道部署）
+- shanbox:3010 supervisord 托管 + musaiyu.pages.dev；专属路径 /musaiyu/socket.io/（全局 /socket.io/ 被 yxx 劫持）；CORS 收敛 nginx 单头；大盘扇形版（状态占比 + 资金入出/零和守恒 + 事件流）。
+- commit: 9517080..aa7e207
