@@ -38,7 +38,9 @@ html,body{height:100%;background:radial-gradient(ellipse at 50% 40%,#0d5c3e,#073
 
 .seat{position:absolute;display:flex;align-items:center;gap:5px;transform:translate(-50%,-50%);z-index:3}
 .seat.v{flex-direction:column;gap:0;text-align:center;transform:translateX(-50%)}
-.seat .name{max-width:78px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.seat{max-width:132px}
+.seat .name{max-width:76px;min-width:0;flex-shrink:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.seat .chips{flex:none;white-space:nowrap}
 .seat .avwrap{position:relative;flex:none}
 .avatar{width:34px;height:34px;border-radius:50%;background-size:cover;background-position:center}
 .seat.h .avatar{width:36px;height:36px}
@@ -496,7 +498,9 @@ function renderHand(popLast){
     $("#handinfo .t2").textContent=`倍率 ×${payoutMultiplier({...res,_cards:cards})}`;
     h.classList.toggle("bright",bright);
   } else {
-    $("#handinfo .t1").textContent=cards.length?`当前 ${cards.length} 张`:"—";
+    // 中途入座坐出(v1.5.10): 本轮无牌是正常行为, 明确告知否则玩家以为卡了
+    const sittingOut = S.phase && S.phase!=="waiting" && S.phase!=="betting_confirm" && !cards.length;
+    $("#handinfo .t1").textContent = sittingOut ? "本局坐出 · 下局参战" : (cards.length?`当前 ${cards.length} 张`:"—");
     $("#handinfo .t2").textContent="";
     h.classList.remove("bright");
   }
@@ -505,7 +509,7 @@ function renderMe(){
   const me=S.players.find(p=>p.pid===S.myPid);
   if(me){
     $("#mychips").textContent=fmt(me.chips);
-    $("#myname").textContent=me.name||"阿洲";
+    $("#myname").textContent=(me.name||"阿洲")+"（我）";
     const mv=$("#meavatar");
     if(mv&&me.face) mv.style.backgroundImage=`url('${me.face}')`;
     $("#mebanker2").innerHTML=me.banker?'<div class="bankerbadge"></div>':"";
@@ -669,6 +673,16 @@ function applyState(state){
   });
   S.phase=state.phase; S.round=state.round; S.pot=state.pot; S.ante=state.ante;
   S.raised=new Set(state.raised||[]);   // 服务端举手集合为准
+  // 座位丢失自愈(v1.5.10): 我的 pid 已不在桌上(被摘座/房间重组) → 自动重新匹配,
+  // 否则客户端会一直显示"等待 自己 决策"并打出幽灵牌
+  if(S.myPid && S.players.length && !S.players.some(p=>p.pid===S.myPid)){
+    if(!applyState._rematching){
+      applyState._rematching = true;
+      console.warn("[self-heal] 座位丢失, 重新匹配");
+      S.myPid=null; S.myTurn=false; clearSeat();
+      setTimeout(()=>{ applyState._rematching=false; if(sock) quickJoin(); }, 1200);
+    }
+  }
   renderAll();
 }
 

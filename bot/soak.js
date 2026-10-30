@@ -26,8 +26,12 @@ const BANKRUPT = 500;
 let E = null;
 try { E = require(path.join(__dirname, 'engine.js')); } catch (e) { /* 没带 engine 就纯随机决策 */ }
 
-const NAMES = ["阿豹","小蟹","老鲷","阿威","丸子","阿香","石头","海豚","大眼","春丽",
-  "阿麟","鱼蛋","阿鲤","花卷","老鳖","虾米","阿蚝","蟹黄","阿鱿","贝贝"];
+// 名字池：前缀×名字 组合出 ~200 个自然昵称，避免出现"阿鱿20807"这种编号味(v1.5.10)
+const NAME_PRE = ["阿","小","老","大","细","肥","高","瘦"];
+const NAME_CORE = ["豹","蟹","鲷","威","子","香","头","豚","眼","丽","麟","蛋","鲤","卷","鳖",
+  "米","蚝","黄","鱿","贝","强","龙","敏","凯","芳","杰","宝","海","坤","白","柱","翠","福","花",
+  "剩","妹","珠","妹","琴","弟","伯","叔","婶","哥","姐","仔","妹"];
+const NAMES = NAME_PRE.flatMap(p => NAME_CORE.map(c => p + c));
 const FACES = ["assets/avatars/avatar-m1.png","assets/avatars/avatar-f1.png","assets/avatars/avatar-m2.png",
   "assets/avatars/avatar-f2.png","assets/avatars/avatar-m3.png","assets/avatars/avatar-f3.png"];
 
@@ -59,7 +63,9 @@ async function pickRoom(exclude) {
 
 function newIdentity() {
   const n = seq++;   // 每个身份唯一序号（漏了自增会让全体 bot 同名共座）
-  return { name: NAMES[n % NAMES.length] + (n >= NAMES.length ? String(Math.floor(n / NAMES.length) + 1) : ''), face: FACES[n % FACES.length] };
+  // 池耗尽后加"·序号"后缀，看起来像昵称而不是"阿鱿20807"这种机器编号
+  const round = Math.floor(n / NAMES.length);
+  return { name: NAMES[n % NAMES.length] + (round ? '·' + (round + 1) : ''), face: FACES[n % FACES.length] };
 }
 
 /* ============ 段位算法（用户要求：分级算法挂不同 bot，L3 均值应恒压 L2/L1，用于观测群体是否变聪明） ============ */

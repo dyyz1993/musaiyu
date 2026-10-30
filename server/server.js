@@ -344,6 +344,7 @@ function reveal(room) {
 
 function nextRound(room) {
   if (room.destroyed || !rooms.has(room.id)) return;   // 房已销毁，定时器尾巴到此为止
+  if (room.id === 'lobby') { room.phase = 'waiting'; broadcast(room, 'phase', { phase: 'waiting' }); return; }
   // 局间清扫：离场 bot 的死座（isBot 且无连接）直接摘除，防幽灵座位累积
   room.players = room.players.filter(p => !p.isBot || p.sid);
   // 活座 = 真人（含暂断线）+ 在线 bot；全走光就回等人态等舰队回填
@@ -421,10 +422,11 @@ io.on('connection', (sock) => {
       if (target > 0) room.fillBots(room.players.length + target);
       sock.emit('joined', { pid: p.pid, roomId, state: publicState(room) });
       broadcast(room, 'room_state', publicState(room));
-      if (room.canStart() && !room._startTimer) {
+      // lobby 是等人区/入口, 永不开局(v1.5.10: 实测 lobby 被残留账号坐满后打了 27 局)
+      if (roomId !== 'lobby' && room.canStart() && !room._startTimer) {
         room._startTimer = setTimeout(() => {
           const r = rooms.get(roomId);
-          if (r && r.phase === 'waiting' && r.canStart()) { delete r._startTimer; startRound(r); }
+          if (r && r.id !== 'lobby' && r.phase === 'waiting' && r.canStart()) { delete r._startTimer; startRound(r); }
         }, 2000);
       }
     } else if (!room.isFull()) {
