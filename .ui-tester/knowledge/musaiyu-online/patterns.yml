@@ -84,3 +84,45 @@ acao_single_header_probe:
 eval_envvar_pitfall:
   description: "session 名存 env 文件再 source 时, 变量名要对上 (存的是 SESSION= 却用 $S → --session 吞掉 eval 作为参数值, JS 被当成子命令报 Unknown command)"
   workaround: "source 后显式 S=\"$SESSION\"; 或 env 文件直接写 S=..."
+
+# ===== 2026-10-30 晚 v2 追加 (实机试玩轮) =====
+
+self_room_kick_pattern:
+  description: "自建房打完整局的标准起手 (lobby 匹配死路时)"
+  steps:
+    - "sock.on('joined',function(d){window.__tk=d.token;})   # 一次性挂 token 捕获钩子(部署客户端自己不存)"
+    - "sock.emit('join_room',{roomId:'<自定义id>',name:'阿洲',face:MY_AVATAR,botCount:3,token:(window.__tk||'')})"
+    - "sleep 2.5   # 服务端 2s 定时器 → startRound → 600ms 后 dealCards"
+  note: "每次 kick 都会换新座位(旧座先摘+新 token), 必须先挂 joined 钩子再 kick"
+
+token_action_pattern:
+  description: "部署旧客户端所有按钮动作都被服务端拒(token 缺失) — 代发带 token 的同参 emit"
+  raise: "sock.emit('toggle_raise',{roomId:S.roomId,pid:S.myPid,token:window.__tk})"
+  draw: "sock.emit('player_action',{roomId:S.roomId,pid:S.myPid,action:'draw',token:window.__tk})"
+  pass: "同上 action:'pass'"
+  evidence: "S.token===undefined (旧客户端 joined 处理器不存 token); 不带 token 的 emit 静默被拒(无任何报错), 回合最终超时托管"
+
+dealing_burst_pattern:
+  description: "抓发牌中横幅+飞牌动画: dealing 相位 <1.5s, 检测后再截图必miss"
+  steps:
+    - "click #btn-next (先关上一局结算面板!)"
+    - "kick → sleep 2.45 → 连拍 screenshot ×N, 张间穿插 banner eval 定位帧"
+    - "横幅在发牌结束后立刻切'等待/轮到你', 以'截图后紧跟的 eval'读数判断该帧所属相位"
+  evidence: "b2_2 帧: 发牌中横幅+飞牌牌堆+首张明牌"
+
+settle_autoclose_pattern:
+  description: "统一摊牌横幅只闪 1 帧(reveal_all 与 settle_result 同 tick 广播) — 结算面板开的瞬间点知道了截全桌翻牌"
+  steps:
+    - "watcher 每 0.3s 轮询 #overlay.show"
+    - "ov=True → 立即 click #btn-next → sleep 0.4 → screenshot (reveal 相位服务端持续 6s, 桌面全是明牌)"
+  caveat: "此时横幅已显示'本局结算 · 我 X' 而非'统一摊牌'(同 tick 被覆盖), 对手明牌全景才是本体"
+
+state_watcher_eval:
+  js: "(()=>{const g=function(id){return document.getElementById(id)};const r={};r.banner=g('banner')?g('banner').textContent:'';r.hand=document.querySelectorAll('#hand .pcard').length;r.overlay=g('overlay')?g('overlay').classList.contains('show'):false;r.marks=document.querySelectorAll('.raisehand').length;r.drawTx=g('btn-draw-tx')?g('btn-draw-tx').textContent:'';try{r.phase=S.phase;r.round=S.round}catch(e){}return JSON.stringify(r)})()"
+  tips:
+    - "全部 ASCII, 单行 IIFE, 链式安全; 中文匹配在 bash 侧做(watcher 脚本里 grep 中文 JSON 值)"
+    - "轮询间隔 0.3s 时 eval 单次 ~0.4-0.6s, 一个回合窗口(9-15s)内检测+截图必须同一 bash 调用"
+
+forced_draw_not_observed:
+  description: "单鬼·强制补牌横幅在部署环境 10+ 局从未出现 (每局发牌后快速轮询 0.4s 专盯)"
+  conclusion: "部署版引擎/牌堆与本地 server.js 有差异, 初始两张含单 joker 的强制补牌路径疑似不触发或极稀有; 截图任务该项标 missing-by-not-encountered"

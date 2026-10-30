@@ -76,3 +76,37 @@ pages_dashboard_v4_fixed:
   fix_root: "CORS 双头修复: express 不再加 ACAO, 由 nginx 统一出单头 — curl -H 'Origin: https://musaiyu.pages.dev' 实测响应仅 1 条 access-control-allow-origin: *(修复前 express+nginx 各出一条, 浏览器拒收)"
   console_errors_NOW: "0 条 'refresh err TypeError: Failed to fetch' (修复前每~1s 一条); 仅 3 条已知浏览器噪音 unhandledrejection NetworkError (见 patterns/loadtime_networkerror_noise)"
   api_actual_BUG_history: "上条 pages_channel.api_actual_BUG (v3) 已于 2026-10-30 修复关闭, 条目保留作历史"
+
+# ===== v5 追加 (2026-10-30 晚 · 实机试玩 11 局全状态截图轮) =====
+# Status: verified (2026-10-30 晚: 全程 11 局实机对局, 全部选择器命中)
+# Version: 5
+
+deployed_build_warning:
+  deployed_online_md5: "eb31624d7e294752bde142d686b32ec7"   # ≠ 本地 web/online.html(7de2eb5a…) ≠ server/public/online.html(d4212aaf…)
+  implication: "部署的是旧版客户端! 本地源码仅供服务端行为参考, 客户端行为以抓取 /musaiyu/online.html 实测为准"
+  key_diff: "部署客户端 emit player_action/toggle_raise 不带 token 字段; 'joined' 事件不存 token → S.token===undefined"
+
+game_dom_probes:
+  banner: "#banner"                  # 直接 textContent (v5 实测 #banner b 与 #banner 均可, 用 #banner 更稳)
+  hand_cards: "#hand .pcard"         # count 0/1/2/3
+  draw_button: "#btn-draw"           # 双语义: 我回合=素材补牌按钮(.disabled 可点); 非我回合 decision/dealing=文字举手按钮
+  draw_button_tx: "#btn-draw-tx"     # "✋ 提前举手" / "✋ 已举手 · 点击撤销" / 我回合为空
+  stop_button: "#btn-stop"
+  settle_overlay: "#overlay.show"
+  settle_tabs: "#panelbox .vt[data-v='rank'|'mine'|'matrix']"   # CSS 直接点, 无需坐标
+  settle_next: "#btn-next"           # 知道了, 关面板
+  raise_mark: ".raisehand"           # 头像 ✋ 标记
+  active_seat_ring: ".seat.act"      # 当前决策者头像倒计时环
+  banker_badge: ".bankerbadge"       # 庄标记(勿与 ✋ 混淆)
+  # 全局 S (const, 全局词法环境) 在 eval 里可直接读: S.phase/S.round/S.players/S.raised/S.myPid ✓
+
+room_api:
+  room_detail: "/musaiyu/api/rooms/:roomId"   # {phase,round,pot,raised[],players[pid,name,chips,cardCount,isBot]}
+  stats: "/musaiyu/api/stats"                 # 含全部房间列表(无过滤)
+
+room_lifecycle_v5:
+  lobby_never_starts: "v1.5.10 lobby 永不开局; 快速匹配 quickJoin 只挑 bot_* 且 online<9 的房 — 舰队房全 9/9 满员时匹配死路, 只能自建房"
+  create_room_pitfall: "部署版 create_room 的 3s 开局定时器不生效(实测 100s 无开局) — 用 join_room 自定义 roomId + botCount 代替"
+  join_room_botCount_semantics: "join_room: fillBots(players.length+botCount)=追加 bot 数; create_room: fillBots(botCount)=总数含房主"
+  sid_null_bot_swept: "nextRound 局间清扫摘除 sid=null 的 fillBots bot → 每局结算后回到 waiting, 下一局必须重新 join_room kick (botCount:3)"
+  my_turn_order: "实测第4/5/6/8局我都是首个决策者(庄轮转), 举手必须赶在发牌阶段发出"

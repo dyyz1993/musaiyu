@@ -199,7 +199,7 @@ class Session {
 
   join(roomId, ante) {
     this.room = roomId; this.ante = ante;
-    this.safeEmit('join_room', { roomId, name: this.identity.name, face: this.identity.face, bot: true, ante, tier: this.tier });
+    this.safeEmit('join_room', { roomId, name: this.identity.name, face: this.identity.face, bot: true, ante, tier: this.tier, botSecret: process.env.MUY_BOT_SECRET || 'mu-bot-2026' });
   }
 
   safeEmit(ev, data) { try { this.sock.emit(ev, data); } catch (e) {} }

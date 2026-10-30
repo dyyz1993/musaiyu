@@ -2,7 +2,24 @@
 
 > 规则：审计/红队每抓到一个问题 → 修复后在此追加一条（版本号 + 日期 + 问题 + 修法 + commit）。
 > 版本号 = MAJOR.MINOR.PATCH；PATCH = 审计修正，MINOR = 功能迭代，MAJOR = 架构变更。
-> 当前版本：**1.5.11**（见最近一条）
+> 当前版本：**1.5.13**（见最近一条）
+
+## [1.5.13] 2026-10-30 · 审计轮抓到 v1.5.12 双回归：fleet 动作 100% 被拒 + 全员误标真人
+- **来源**：审计抽样「大豹」——每条 action 后必跟 timeout_pass（7/7=100%），bot 决策全部失效。深挖出 v1.5.12 的两个回归：
+- **回归① waiting 分支漏 bot 受信**：v1.5.12 只在中途入座分支加了 secret 校验，waiting 分支 addPlayer 硬编码 false——服务重启后 fleet 重进空房全变 isBot=false「真人」。
+- **回归② mid-game 复用重生成 token**：同名复用座位时无条件 `p.token=randomBytes`——churn 下同身份双会话，B 重挂座即作废 A 的 token，A 全部动作被 v1.5.12 凭证校验拒绝 → 超时托管 → 再入场风暴（会话堆积 2600+）。
+- **修法**：waiting 分支补 secret 校验+trusted 贯穿；mid-game 复用保留原 token（仅新座位签发）；fleet join_room 补 botSecret（v1.5.12 的 fleet 补丁中途断言失败致 join_room 行漏发，本次补上）。服务端加临时 [trust-debug] 日志观察。
+- **验证**：trust-debug 日志 match=true；10 房 × 8 bot = 80 isBot=true 0 误标；fleet 80 会话满座出牌正常；净差 0。
+- commit: (本次)
+- **教训**：多分支同一语义的改动必须逐分支核对（本次三处入座路径只改了一处）；部署后必须立即验证核心身份标记（/api/stats bots 计数）而非等下一轮审计。
+
+## [1.5.12] 2026-10-30 · ChatGPT 分诊表服务端安全三件套落地
+- **P0-1 会话凭证**：入座即签发 16 字节随机 token（每次入座刷新，旧凭证作废）；player_action/toggle_raise/leave_room/reconnect_player 四入口校验；同名续档必须持座位 token（堵昵称冒领）；**bot 身份受信**：自报 bot:true 必须带共享密钥（MUY_BOT_SECRET，服务端与 fleet 同默认 mu-bot-2026），无 secret 降级普通玩家——堵"自报 bot+同名覆盖在线者 sid 拿私牌"两条复现路径。fleet 全发射点接入 token。
+- **P1-5 换房污染**：join_room 换桌语义补 `sock.leave(旧房)`——退出旧广播组，旧房发牌/阶段/结算不再推给新桌连接；所有游戏事件自动携带 roomId（broadcast 一处统一注入）。
+- **P1-6 离席结算排除**：reveal 的 active 过滤加 `!p.folded`——明确离席(坐出)玩家不再参与结算。
+- **配套**：/api/rooms/:roomId 增加 raised 数组（可观测举手）；快照持久化 token（重启后 fleet 凭证续座不断）。
+- **验证**：探针三段实测（正确 token 举手生效 ['p6'] / 伪造 token 被拒状态不变 / 正确撤销 []）；fleet 重启后 80 座满员带 token 正常出牌（巡检出牌=78 递增）。
+- commit: dd7c367
 
 ## [1.5.11] 2026-10-30 · ChatGPT 审查分诊表前两项落地：出牌回合校验 + XSS
 - **来源**：chatgpt-code-review2.md 分诊表 1/2 项（小改高优先）。

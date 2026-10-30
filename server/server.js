@@ -427,12 +427,15 @@ io.on('connection', (sock) => {
       // 同名续档：同名字真人复用旧座位（页面刷新/服务重启后筹码不重开）
       // 同名续档(v1.5.7 收紧): 仅当旧座位无人占用且筹码为正时复用——
       // 否则测试期破产的 0 筹码死座会被后来同名玩家继承(实测: 玩家进桌 0 筹码)
+      // bot 受信(v1.5.12 修正): waiting 分支也要验 secret, 否则重启后 fleet 全变"真人"
+      const trusted = !!bot && (botSecret || '') === BOT_SECRET;
       // 同名续档须凭证(v1.5.12 P0-1): 只有持有该座位 token 的客户端才能接回, 防昵称冒领
       let p = room.players.find(x => !x.isBot && x.name === (name || '玩家') && !x.sid && x.chips > 0 && x.token && x.token === token);
       if (p) { p.sid = sock.id; if (face) p.face = face; }
       else {
-        p = room.addPlayer(sock.id, 'p' + (room._pSeq = (room._pSeq || 0) + 1), name || '玩家', face, false);
+        p = room.addPlayer(sock.id, 'p' + (room._pSeq = (room._pSeq || 0) + 1), name || '玩家', face, trusted);
         p.token = crypto.randomBytes(16).toString('hex');
+        if (tier !== undefined && trusted) p.tier = tier;
         scheduleSave();
       }
       const target = Math.min(botCount || 0, room.maxPlayers - 1);
@@ -450,6 +453,7 @@ io.on('connection', (sock) => {
       // 中途入座(v1.5.6): 人/bot 通用——同名者接回原座位(刷新恢复,补发私牌), 新座位本轮坐出、下局正式参战
       // bot 复用必须受信; 真人复用必须持座位凭证(v1.5.12 P0-1: 堵昵称冒领取私牌)
       const trusted = !!bot && (botSecret || '') === BOT_SECRET;
+      if (bot) console.log(`[trust-debug] waiting/中途 bot=${bot} botSecret=${JSON.stringify(botSecret)} match=${trusted}`);
       let p = bot
         ? (trusted ? room.players.find(x => x.isBot && x.name === (name || '')) : null)
         : room.players.find(x => !x.isBot && x.name === (name || '玩家') && !x.sid && x.chips > 0 && x.token && x.token === token);
@@ -459,10 +463,10 @@ io.on('connection', (sock) => {
         if (tier !== undefined && trusted) p.tier = tier;
       } else {
         p = room.addPlayer(sock.id, 'p' + (room._pSeq = (room._pSeq || 0) + 1), name || '玩家', face, trusted);
+        p.token = crypto.randomBytes(16).toString('hex');   // 仅新座位签发; 复用座位保留原 token(重生成会废掉原会话)
         if (room.phase !== 'waiting') { p.folded = true; p.stake = 0; }
         scheduleSave();
       }
-      p.token = crypto.randomBytes(16).toString('hex');   // 每次入座刷新凭证, 旧凭证立即作废
       sock.emit('joined', { pid: p.pid, roomId, state: publicState(room), token: p.token });
       if (p.cards.length && room.phase !== 'waiting' && room.phase !== 'betting_confirm') sock.emit('your_cards', { cards: p.cards });
       broadcast(room, 'room_state', publicState(room));
