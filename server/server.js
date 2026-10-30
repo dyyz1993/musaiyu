@@ -440,6 +440,7 @@ io.on('connection', (sock) => {
       }
       const target = Math.min(botCount || 0, room.maxPlayers - 1);
       if (target > 0) room.fillBots(room.players.length + target);
+      console.log(`[token-issue] waiting ${p.name} seat=${p.token.slice(0,8)}`);
       sock.emit('joined', { pid: p.pid, roomId, state: publicState(room), token: p.token });
       broadcast(room, 'room_state', publicState(room));
       // lobby 是等人区/入口, 永不开局(v1.5.10: 实测 lobby 被残留账号坐满后打了 27 局)
@@ -467,6 +468,7 @@ io.on('connection', (sock) => {
         if (room.phase !== 'waiting') { p.folded = true; p.stake = 0; }
         scheduleSave();
       }
+      console.log(`[token-issue] midgame ${p.name} seat=${p.token.slice(0,8)}`);
       sock.emit('joined', { pid: p.pid, roomId, state: publicState(room), token: p.token });
       if (p.cards.length && room.phase !== 'waiting' && room.phase !== 'betting_confirm') sock.emit('your_cards', { cards: p.cards });
       broadcast(room, 'room_state', publicState(room));
@@ -503,8 +505,9 @@ io.on('connection', (sock) => {
   sock.on('player_action', ({ roomId, pid, action, token }) => {
     const room = rooms.get(roomId); if (!room) return;
     const p = room.findPlayer(pid);
-    if (!p || p.sid !== sock.id) return;        // 只能动自己的牌（防替他人出牌）
-    if (p.token !== token) return;              // 凭证校验(v1.5.12 P0-1): token 随每次入座刷新
+    if (!p) return console.log(`[act-reject] no-player ${pid} @ ${roomId}`);
+    if (p.sid !== sock.id) return console.log(`[act-reject] sid-mismatch ${p.name} seat=${p.sid} sock=${sock.id}`);
+    if (p.token !== token) return console.log(`[act-reject] token-mismatch ${p.name} seat=${(p.token||"none").slice(0,8)} got=${(token||"none").slice(0,8)}`);
     playerAction(room, pid, action, false);
   });
   sock.on('leave_room', ({ roomId, pid, token }) => {

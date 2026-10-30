@@ -162,7 +162,7 @@ class Session {
     s.on('connect_error', () => { stats.connectErr++; });
     s.on('disconnect', () => { if (!this.done) { /* 非自愿断线（服务重启/硬断）按掉线离场，走统一善后 */ this.finish('abrupt'); } });
     s.on('rejoined', d => { this.mode = null; this.seated = true; stats.seated++; this.adopt(d.state); this.armDwell(); });
-    s.on('joined', d => { dlog(`joined ${this.identity.name} pid=${d.pid} 房=${d.roomId}`); this.myPid = d.pid; this.room = d.roomId; this.seated = true; stats.seated++; this.adopt(d.state); this.track('joined', { tier: this.tier }); this.armDwell(); });
+    s.on('joined', d => { dlog(`joined ${this.identity.name} pid=${d.pid} 房=${d.roomId}`); this.myPid = d.pid; this.room = d.roomId; this.token = d.token; this.seated = true; stats.seated++; this.adopt(d.state); this.track('joined', { tier: this.tier, hasToken: !!d.token }); this.armDwell(); });
     s.on('spectator', () => { dlog(`spectator ${this.identity.name}`); this.track('spectator'); this.leave(true); });            // 房满了，换个地方
     s.on('room_rejected', d => { log(`拒入: ${d?.reason || ''}`); this.leave(true); });
     s.on('your_cards', d => { this.myCards = d.cards || []; });

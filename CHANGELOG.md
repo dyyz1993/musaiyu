@@ -12,6 +12,7 @@
 - **验证**：trust-debug 日志 match=true；10 房 × 8 bot = 80 isBot=true 0 误标；fleet 80 会话满座出牌正常；净差 0。
 - commit: (本次)
 - **教训**：多分支同一语义的改动必须逐分支核对（本次三处入座路径只改了一处）；部署后必须立即验证核心身份标记（/api/stats bots 计数）而非等下一轮审计。
+- **追加（同日）**：部署后仍 302 次 token-mismatch——对照日志（seat=xx got=none）实锤 fleet 发出的 token 是 undefined：v1.5.12 的 fleet 补丁分两次打，第一次中途 assert 失败整文件未写入，第二次只补了三个发射点、**漏了 joined 处理器的 `this.token = d.token` 存储行**——fleet 从未存过 token。一行修复后拒绝数零增长、出牌正常。教训：**补丁脚本中途失败 = 整个文件未写入，"部分生效"是错觉；修复合并在另一个补丁里重打时必须逐行核对覆盖面**。
 
 ## [1.5.12] 2026-10-30 · ChatGPT 分诊表服务端安全三件套落地
 - **P0-1 会话凭证**：入座即签发 16 字节随机 token（每次入座刷新，旧凭证作废）；player_action/toggle_raise/leave_room/reconnect_player 四入口校验；同名续档必须持座位 token（堵昵称冒领）；**bot 身份受信**：自报 bot:true 必须带共享密钥（MUY_BOT_SECRET，服务端与 fleet 同默认 mu-bot-2026），无 secret 降级普通玩家——堵"自报 bot+同名覆盖在线者 sid 拿私牌"两条复现路径。fleet 全发射点接入 token。
