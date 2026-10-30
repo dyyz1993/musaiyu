@@ -292,7 +292,7 @@ function playerAction(room, pid, action, isTimeout = false) {
     const ps = p.sid && io.sockets.sockets.get(p.sid);
     if (ps) ps.emit('your_cards', { cards: p.cards });   // 补牌后同步手牌
   }
-  broadcast(room, 'player_action', { pid, name: p.name, action });
+  broadcast(room, 'player_action', { pid, name: p.name, action, timeout: isTimeout });   // 超时托管标记(轨迹可归因)
   broadcast(room, 'room_state', publicState(room));
 }
 

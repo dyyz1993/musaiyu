@@ -123,7 +123,7 @@ class Session {
     this.identity = opts.identity || newIdentity();
     this.roomHint = opts.roomHint || null;   // {roomId, ante}
     this.tier = opts.tier ?? (seq % TIER_KEYS.length);   // 段位：新号均匀分布，晋升/降级沿会话传递
-    this.speed = 0.6 + Math.random() * 0.8;  // 拟人节奏系数
+    this.speed = 0.6 + Math.random() * 0.6;  // 拟人节奏系数(上限1.2→最大延迟11.4s,给服务端15s超时留余量,审计v1.5.1)
     this.myPid = opts.pid || null;
     this.myCards = [];
     this.chips = null;
@@ -158,6 +158,7 @@ class Session {
     s.on('spectator', () => { dlog(`spectator ${this.identity.name}`); this.track('spectator'); this.leave(true); });            // 房满了，换个地方
     s.on('room_rejected', d => { log(`拒入: ${d?.reason || ''}`); this.leave(true); });
     s.on('your_cards', d => { this.myCards = d.cards || []; });
+    s.on('player_action', d => { if (d.pid === this.myPid && d.timeout) this.track('timeout_pass'); });   // 服务端托管代打(审计盲区补全, v1.5.1)
     s.on('decision_turn', d => { dlog(`decision_turn ${d.name} pid=${d.pid} 我=${this.myPid}`); if (d.pid === this.myPid) this.act(); });
     s.on('round_start', () => { this.myCards = []; if (Math.random() < 0.15) setTimeout(() => this.safeEmit('toggle_raise', { roomId: this.room, pid: this.myPid }), 300 + Math.random() * 1200); });
     s.on('room_state', st => { const me = st.players.find(p => p.pid === this.myPid); if (me && me.chips !== this.chips) { this.track('chips', { from: this.chips, to: me.chips }); this.chips = me.chips;
