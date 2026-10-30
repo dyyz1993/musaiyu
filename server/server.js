@@ -153,6 +153,7 @@ function liveHumans(room) {
 }
 let recycled = 0;
 function destroyRoom(room) {
+  room.destroyed = true;   // 定时器(nextRound/reveal 尾巴)见到标记必须放弃，防"复活"
   for (const t of Object.values(room.timers)) clearTimeout(t.timeout);
   if (room._startTimer) { clearTimeout(room._startTimer); delete room._startTimer; }
   rooms.delete(room.id);
@@ -191,6 +192,7 @@ function publicState(room) {
 
 /* ==================== 游戏状态机 ==================== */
 function startRound(room) {
+  if (room.destroyed || !rooms.has(room.id)) return;
   room.round++; room.phase = 'betting_confirm'; room.pot = 0;
   room.decided = new Set(); room.raised = new Set(); room.stats.lastActivity = Date.now();
   room.deck = E.shuffle(E.buildDeck());   // 每局重建 55 张牌堆
@@ -299,6 +301,7 @@ function reveal(room) {
 }
 
 function nextRound(room) {
+  if (room.destroyed || !rooms.has(room.id)) return;   // 房已销毁，定时器尾巴到此为止
   // 局间清扫：离场 bot 的死座（isBot 且无连接）直接摘除，防幽灵座位累积
   room.players = room.players.filter(p => !p.isBot || p.sid);
   // 活座 = 真人（含暂断线）+ 在线 bot；全走光就回等人态等舰队回填
@@ -424,7 +427,9 @@ const DATA_DIR = path.join(__dirname, 'data');
 const SNAP_FILE = path.join(DATA_DIR, 'state.json');
 
 function serializeRooms() {
-  return [...rooms.values()].map(r => ({
+  return [...rooms.values()]
+    .filter(r => !r.destroyed)
+    .map(r => ({
     id: r.id, ante: r.ante, maxPlayers: r.maxPlayers, round: r.round,
     bankerSeq: r.bankerSeq, _pSeq: r._pSeq || 0, _botSeq: r._botSeq || 0,
     stats: r.stats,
@@ -464,6 +469,7 @@ function restoreRooms() {
     let skippedBots = 0;
     for (const s of saved) {
       if (s.id.startsWith('bot_')) { skippedBots++; continue; }   // bot 房交给外部舰队重建
+      if (!s.round && !(s.players || []).length) { skippedBots++; continue; }   // 空壳房(红队残留)不恢复
       const room = new Room(s.id, { ante: s.ante, maxPlayers: s.maxPlayers });
       room.round = s.round || 0; room.bankerSeq = s.bankerSeq || 0;
       room._pSeq = s._pSeq || 0; room._botSeq = s._botSeq || 0;

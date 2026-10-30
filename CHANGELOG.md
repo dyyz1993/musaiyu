@@ -2,7 +2,12 @@
 
 > 规则：审计/红队每抓到一个问题 → 修复后在此追加一条（版本号 + 日期 + 问题 + 修法 + commit）。
 > 版本号 = MAJOR.MINOR.PATCH；PATCH = 审计修正，MINOR = 功能迭代，MAJOR = 架构变更。
-> 当前版本：**1.4.0**（见最近一条）
+> 当前版本：**1.4.1**（见最近一条）
+
+## [1.4.1] 2026-10-30 · 红队抓到真 bug：销毁房间被定时器复活 + 快照无限还魂
+- **问题**（生产红队压测抓到）：红队 A3/A4 制造的 rt_ 垃圾房在服务端日志显示"已回收"（计数+1），但 API 永远查得到。根因两条链：①`reveal` 尾部的 `setTimeout(nextRound, 6000)` 不看房间死活，sweep 删除后又把 `phase='waiting'` 写回并重建局面（僵尸复活）；②被删房间在闭包定时器里继续 `scheduleSave()`，快照里写回 rt_ 房 → 服务重启 `restoreRooms` 再恢复 → 再回收 → 再写回，无限还魂。
+- **修法**：`destroyRoom` 打 `destroyed` 标记；`startRound`/`nextRound` 入口见标记（或 `!rooms.has(id)`）直接 return（定时器尾巴到此为止）；`serializeRooms` 过滤 destroyed；`restoreRooms` 跳过空壳真人房（round=0 且 players 空）。本地复现红队场景：回收后 0 残留、重启不带回。
+- commit: (本次)
 
 ## [1.4.0] 2026-10-30 · 混沌测试体系上线（红队 + 房间巡检）
 - **新增** `bot/redteam.js`：8 类攻击向量（替出牌/座位劫持/join 轰炸/非法载荷/未入房出牌/超速连断/重入竞争/巨型载荷），本地全绿——服务端不崩、net=0、垃圾房自动回收、守卫 5/5 不破。
