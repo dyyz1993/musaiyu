@@ -153,23 +153,23 @@ to{box-shadow:0 0 0 2px rgba(242,206,120,.95),0 0 16px rgba(242,206,120,.8)}}
 .panel{width:88%;max-width:330px;background:linear-gradient(180deg,#12241b,#0a1712);
   border:1.5px solid var(--gold);border-radius:16px;padding:16px;max-height:82%;overflow:auto}
 .panel h3{color:var(--gold-hi);font-size:15px;margin-bottom:10px;text-align:center}
-.srow{display:flex;justify-content:space-between;font-size:12px;padding:5px 2px;
+.srow{display:flex;justify-content:space-between;font-size:13.5px;padding:7px 2px;
   border-bottom:1px dashed rgba(255,255,255,.12)}
 .srow .win{color:#7de3a8;font-weight:700}.srow .tie{color:#ccc}
 .stotal{display:flex;justify-content:space-between;font-size:14px;font-weight:800;margin-top:10px}
 /* 对阵乘法表 */
 .mxwrap{overflow-x:auto;overflow-y:hidden;margin:10px -6px 0;padding:0 6px;-webkit-overflow-scrolling:touch}
-table.mx{border-collapse:separate;border-spacing:2px;font-size:10px;margin:0 auto}
+table.mx{border-collapse:separate;border-spacing:3px;font-size:12.5px;margin:0 auto}
 table.mx th,table.mx td{padding:2px;text-align:center;white-space:nowrap}
 table.mx thead th{vertical-align:bottom}
-table.mx .hname{font-size:10px;color:rgba(255,255,255,.85);font-weight:600;line-height:1.1}
+table.mx .hname{font-size:11.5px;color:rgba(255,255,255,.85);font-weight:600;line-height:1.1}
 table.mx .hcards{display:flex;gap:1px;justify-content:center;margin-top:3px}
-table.mx .hsub{font-size:9.5px;font-weight:700;margin-top:2px;font-variant-numeric:tabular-nums}
+table.mx .hsub{font-size:11px;font-weight:700;margin-top:2px;font-variant-numeric:tabular-nums}
 table.mx .hsub.pos{color:#7de3a8}.table.mx .hsub.neg{color:#ff8f86}
-table.mx .hc{width:16px;height:22px;border-radius:2px;background:#fff;overflow:hidden;
+table.mx .hc{width:20px;height:28px;border-radius:2px;background:#fff;overflow:hidden;
   box-shadow:0 0 0 1px rgba(217,180,92,.75)}
 table.mx .hc img{width:100%;height:100%;display:block}
-table.mx td{width:48px;height:30px;border-radius:4px;background:rgba(255,255,255,.05);
+table.mx td{width:54px;height:36px;border-radius:4px;background:rgba(255,255,255,.05);
   font-variant-numeric:tabular-nums;font-size:11px;font-weight:600}
 table.mx td.win{background:rgba(39,174,96,.2);color:#8ff0b4;font-weight:700}
 table.mx td.lose{background:rgba(192,57,43,.16);color:#ffa79e;font-weight:700}
@@ -187,7 +187,7 @@ table.mx .diag{background:rgba(255,255,255,.02)}
 .vt.sel{background:rgba(217,180,92,.24);border-color:var(--gold);color:#fff}
 .vt:hover:not(.sel){background:rgba(217,180,92,.10)}
 /* 排行视图 */
-.lbrow{display:flex;align-items:center;gap:7px;padding:5px 4px;border-bottom:1px dashed rgba(255,255,255,.09)}
+.lbrow{display:flex;align-items:center;gap:8px;padding:8px 4px;font-size:13.5px;border-bottom:1px dashed rgba(255,255,255,.09)}
 .lbrow.me{background:rgba(217,180,92,.14);border-radius:8px;border-bottom-color:transparent}
 .lbrank{width:16px;text-align:center;font-size:11px;color:#8b9a94;font-weight:700}
 .lbrow.me .lbrank{color:var(--gold-hi)}
@@ -201,7 +201,7 @@ table.mx .diag{background:rgba(255,255,255,.02)}
 .lbamt{width:62px;text-align:right;font-size:12px;font-weight:800;font-variant-numeric:tabular-nums}
 .lbamt.pos{color:#7de3a8}.lbamt.neg{color:#ff8f86}
 /* 我的对局视图 */
-.mmrow{display:flex;align-items:center;gap:8px;padding:7px 4px;border-bottom:1px dashed rgba(255,255,255,.09)}
+.mmrow{display:flex;align-items:center;gap:8px;padding:9px 4px;font-size:13.5px;border-bottom:1px dashed rgba(255,255,255,.09)}
 .mmside{display:flex;flex-direction:column;align-items:center;gap:2px;flex:none}
 .mmside .mmcards{display:flex;gap:1px}
 .mmside .mmcards .hc{width:17px;height:24px;border-radius:2px;background:#fff;overflow:hidden;box-shadow:0 0 0 1px rgba(217,180,92,.65)}
@@ -766,7 +766,18 @@ function connect(){
       // 轮到我时收起结算面板(否则面板盖住过/补按钮,回合在面板后超时,v1.5.6)
       const o=$("#overlay"); if(o.classList.contains("show")) o.classList.remove("show");
       const raised=S.raised.has(S.myPid);
-      setBanner(raised?"轮到你 · 已举手，直接补牌":"轮到你 · 过 或 补一张");
+      if(raised){
+        // 举手内化(v1.5.9): 提前举过手→轮到即自动补牌, 不需要再点(用户明确要求)
+        setBanner("轮到你 · 已举手，自动补牌");
+        renderHand(); renderSeats(); updateRaiseBtn();
+        startRing(d.timeout||15,()=>{},S.myPid);
+        setTimeout(()=>{
+          S.myTurn=false; updateRaiseBtn();
+          if(sock) sock.emit("player_action",{roomId:S.roomId,pid:S.myPid,action:"draw"});
+        }, 900);
+        return;
+      }
+      setBanner("轮到你 · 过 或 补一张");
       renderHand(); renderSeats(); updateRaiseBtn();
       startRing(d.timeout||15,()=>{ S.myTurn=false; updateRaiseBtn();
         // 超时自动过(服务端 decided 集合会去重, 不怕双发; 不能走 emitAction, 它要求 myTurn)
