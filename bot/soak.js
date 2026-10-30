@@ -85,11 +85,13 @@ const TIERS = {
        decide: (cards) => {
          const jokers = cards.filter(c => c.joker).length;
          const r = E.classifyHand(cards);
-         if (jokers > 0) return r.pts >= 8 ? 'pass' : 'draw';            // 有鬼先补冲天公
-         if (r.pts === 0 && !GOOD.includes(r.type)) return 'draw';        // 0 点赌翻盘/木虱
+         if (GOOD.includes(r.type)) return 'pass';                        // 特殊牌型已成,绝不重抽(v1.5.4: 此前漏判,会把顺子/豹子按距离公式抽掉)
+         const jokersN = jokers;
+         if (jokersN > 0) return r.pts >= 7 ? 'pass' : 'draw';            // 有鬼必改良,7 点以上停
+         if (r.pts === 0) return 'draw';                                  // 0 点: 期望 4.5 优于 0,且 30% 概率抽成木虱
          if (r.pts >= 7) return 'pass';
-         const gap = 9 - r.pts;                                          // 离 9 越远越要补
-         return Math.random() < Math.min(0.95, 0.35 + gap * 0.15) ? 'draw' : 'pass';
+         const gap = 9 - r.pts;                                          // 中段收敛(v1.5.4): 0.35+0.15g → 0.25+0.10g
+         return Math.random() < Math.min(0.9, 0.25 + gap * 0.1) ? 'draw' : 'pass';
        } },
 };
 const TIER_KEYS = Object.keys(TIERS).map(Number);
