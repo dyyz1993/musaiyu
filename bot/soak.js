@@ -219,7 +219,7 @@ class Session {
     this.dwellT = setTimeout(() => this.leave(), rand(DWELL));
   }
 
-  /* 统一善后：done 防重入；graceful 发 leave_room 释放座位，abrupt 硬断模拟掉线 */
+  /* 统一善后：done 防重入；事件顺序 = bankrupt/tier_shift(结果分类) → leave(终态)，保证轨迹时序单调 */
   finish(kind) {
     if (this.done) return;
     this.done = true;
@@ -227,11 +227,6 @@ class Session {
     stats.active--; stats.exits++;
     if (kind === 'graceful') stats.graceful++; else stats.abrupt++;
     if (this.seated) { stats.seated--; this.seated = false; }
-    this.track('leave', { kind });
-    try {
-      if (kind === 'abrupt' && this.sock.io.engine && this.sock.io.engine.close) this.sock.io.engine.close();
-      else this.sock.disconnect();
-    } catch (e) { try { this.sock.disconnect(); } catch (e2) {} }
     const bankrupt = this.chips !== null && this.chips < BANKRUPT;
     if (bankrupt) { log(`${this.identity.name} 破产(筹码${this.chips}) → 换新号`); this.track('bankrupt'); }
     // 分段战绩累计 + 晋降级（赢≥1.5倍升段 / 破产降段）→ 群体向高级自发漂移
@@ -244,6 +239,11 @@ class Session {
     const demote = bankrupt && this.tier > 0;
     const nextTier = promote ? this.tier + 1 : demote ? this.tier - 1 : this.tier;
     if (nextTier !== this.tier) { log(`${this.identity.name} ${TIERS[this.tier].name}→${TIERS[nextTier].name}(${promote ? '晋升' : '降级'})`); this.track('tier_shift', { from: this.tier, to: nextTier }); }
+    this.track('leave', { kind });   // 终态事件最后写
+    try {
+      if (kind === 'abrupt' && this.sock.io.engine && this.sock.io.engine.close) this.sock.io.engine.close();
+      else this.sock.disconnect();
+    } catch (e) { try { this.sock.disconnect(); } catch (e2) {} }
     const gap = rand(REGAP);
     setTimeout(() => {
       stats.reentries++;
